@@ -1,6 +1,6 @@
 // components/Student/PhotoUpload.jsx
-// Upload uniform photo and get instant grading
-// Integrates: imageProcessing, gradingLogic, gradingService
+// Combined file: Photo upload + grading + breakdown display
+// Ready for: frontend/src/components/Student/PhotoUpload.jsx
 
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -18,148 +18,17 @@ import {
 import LoadingSpinner from '../Common/LoadingSpinner';
 import Navbar from '../Common/Navbar';
 
-export default function PhotoUpload() {
-  const navigate = useNavigate();
-  const { user, userData } = useAuth();
-  const fileInputRef = useRef(null);
-
-  // State
-  const [preview, setPreview] = useState(null);
-  const [file, setFile] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [step, setStep] = useState('upload'); // 'upload', 'analyzing', 'result'
-  const [gradingResult, setGradingResult] = useState(null);
-  const [imageQuality, setImageQuality] = useState(null);
-
-  // Handle file selection
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      processFile(selectedFile);
-    }
-  };
-
-  // Process selected file
-  const processFile = async (selectedFile) => {
-    setError('');
-
-    // Step 1: Validate file
-    const validation = validateImageFile(selectedFile);
-    if (!validation.valid) {
-      setError(validation.error);
-      return;
-    }
-
-    setFile(selectedFile);
-
-    // Step 2: Create preview
-    try {
-      const dataUrl = await fileToDataUrl(selectedFile);
-      setPreview(dataUrl);
-
-      // Step 3: Analyze image quality
-      const quality = await analyzeImageQuality(dataUrl);
-      setImageQuality(quality);
-
-      // Step 4: Check if full-body photo
-      const fullBody = await isFullBodyPhoto(dataUrl);
-      if (!fullBody.isFullBody && fullBody.confidence < 50) {
-        setError(
-          `⚠️ Warning: Photo may not show full body (${fullBody.confidence}% confidence). Grading may be less accurate.`
-        );
-      }
-    } catch (err) {
-      setError('Failed to process image');
-      console.error(err);
-    }
-  };
-
-  // Handle drag and drop
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile) {
-      processFile(droppedFile);
-    }
-  };
-
-  // Main grading function
-  const handleUploadAndGrade = async () => {
-    if (!file || !user || !userData) {
-      setError('Missing required information');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setStep('analyzing');
-
-    try {
-      // Step 1: Upload photo to Supabase Storage
-      const fileName = `${user.id}/${Date.now()}-${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('uniform-photos')
-        .upload(fileName, file);
-
-      if (uploadError) throw new Error(uploadError.message);
-
-      // Step 2: Get public URL
-      const { data: urlData } = supabase.storage
-        .from('uniform-photos')
-        .getPublicUrl(fileName);
-
-      const photoUrl = urlData.publicUrl;
-
-      // Step 3: Analyze uniform using rule-based logic
-      const gradingData = await analyzeUniform(preview);
-
-      if (!gradingData) {
-        throw new Error('Failed to analyze uniform');
-      }
-
-      // Step 4: Save grade to database
-      const dbResult = await saveGradingResult(userData.id, gradingData, photoUrl);
-
-      if (!dbResult.success) {
-        throw new Error(dbResult.error);
-      }
-
-      // Step 5: Display result
-      setGradingResult({
-        ...gradingData,
-        gradeId: dbResult.gradeId,
-        photoUrl: photoUrl,
-      });
-
-      setStep('result');
-    } catch (err) {
-      setError(err.message || 'Failed to upload and grade');
-      setStep('upload');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getGradeColor = (grade) => {
-    const colors = {
-      A: 'text-green-600 bg-green-50 border-green-300',
-      B: 'text-blue-600 bg-blue-50 border-blue-300',
-      C: 'text-yellow-600 bg-yellow-50 border-yellow-300',
-      D: 'text-orange-600 bg-orange-50 border-orange-300',
-      F: 'text-red-600 bg-red-50 border-red-300',
-    };
-    return colors[grade] || 'text-gray-600 bg-gray-50 border-gray-300';
-  };
-
+// ============================================================================
+// SUB-COMPONENT: GradeBreakdown
+// Shows detailed breakdown of grades with progress bars and feedback
+// ============================================================================
+function GradeBreakdown({
+  breakdown,
+  feedback,
+  showPhoto = false,
+  photoUrl = null,
+  compact = false,
+}) {
   const getScoreColor = (score) => {
     if (score >= 85) return 'bg-green-100 text-green-800';
     if (score >= 70) return 'bg-blue-100 text-blue-800';
@@ -175,6 +44,288 @@ export default function PhotoUpload() {
     if (score >= 50) return 'bg-orange-600';
     return 'bg-red-600';
   };
+
+  const components = [
+    {
+      icon: '👕',
+      label: 'Shirt',
+      score: breakdown?.shirt || 0,
+      feedback: feedback?.shirt || 'No feedback',
+    },
+    {
+      icon: '👖',
+      label: 'Pants',
+      score: breakdown?.pant || 0,
+      feedback: feedback?.pant || 'No feedback',
+    },
+    {
+      icon: '👞',
+      label: 'Shoes',
+      score: breakdown?.shoes || 0,
+      feedback: feedback?.shoes || 'No feedback',
+    },
+    {
+      icon: '💇',
+      label: 'Grooming',
+      score: breakdown?.grooming || 0,
+      feedback: feedback?.grooming || 'No feedback',
+    },
+    {
+      icon: '✨',
+      label: 'Cleanliness',
+      score: breakdown?.cleanliness || 0,
+      feedback: feedback?.cleanliness || 'No feedback',
+    },
+  ];
+
+  // Compact view - for lists/sidebars
+  if (compact) {
+    return (
+      <div className="space-y-2">
+        {components.map((comp) => (
+          <div key={comp.label} className="flex justify-between items-center">
+            <span className="text-sm text-gray-700">{comp.icon} {comp.label}</span>
+            <span className={`text-sm font-semibold px-2 py-1 rounded ${getScoreColor(comp.score)}`}>
+              {comp.score}/100
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Full detailed view
+  return (
+    <div className="space-y-6">
+      {/* Photo Section */}
+      {showPhoto && photoUrl && (
+        <div>
+          <h3 className="font-semibold text-gray-800 mb-3">Uniform Photo</h3>
+          <img
+            src={photoUrl}
+            alt="Uniform"
+            className="w-full max-h-96 object-cover rounded-lg"
+          />
+        </div>
+      )}
+
+      {/* Component Breakdown */}
+      <div>
+        <h3 className="font-semibold text-gray-800 mb-4">Score Breakdown</h3>
+        <div className="space-y-4">
+          {components.map((comp) => (
+            <div key={comp.label} className="border border-gray-200 rounded-lg p-4">
+              {/* Header */}
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-semibold text-gray-800">
+                  {comp.icon} {comp.label}
+                </span>
+                <span className={`text-lg font-bold px-3 py-1 rounded-full ${getScoreColor(comp.score)}`}>
+                  {comp.score}/100
+                </span>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+                <div
+                  className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(comp.score)}`}
+                  style={{ width: `${comp.score}%` }}
+                />
+              </div>
+
+              {/* Feedback */}
+              <p className="text-sm text-gray-600">{comp.feedback}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN COMPONENT: PhotoUpload
+// Handles file upload, grading, and result display
+// ============================================================================
+export default function PhotoUpload() {
+  const navigate = useNavigate();
+  const { user, userData } = useAuth();
+  const fileInputRef = useRef(null);
+
+  // State Management
+  const [preview, setPreview] = useState(null);
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState('upload'); // 'upload', 'analyzing', 'result'
+  const [gradingResult, setGradingResult] = useState(null);
+  const [imageQuality, setImageQuality] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  // ========================================================================
+  // FILE HANDLING
+  // ========================================================================
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      processFile(selectedFile);
+    }
+  };
+
+  const processFile = async (selectedFile) => {
+    setError('');
+    setUploadProgress(0);
+
+    // Step 1: Validate file
+    const validation = validateImageFile(selectedFile);
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
+
+    setFile(selectedFile);
+    setUploadProgress(20);
+
+    // Step 2: Create preview
+    try {
+      const dataUrl = await fileToDataUrl(selectedFile);
+      setPreview(dataUrl);
+      setUploadProgress(40);
+
+      // Step 3: Analyze image quality
+      const quality = await analyzeImageQuality(dataUrl);
+      setImageQuality(quality);
+      setUploadProgress(60);
+
+      // Step 4: Check if full-body photo
+      const fullBody = await isFullBodyPhoto(dataUrl);
+      setUploadProgress(80);
+
+      if (!fullBody.isFullBody && fullBody.confidence < 50) {
+        setError(
+          `⚠️ Warning: Photo may not show full body (${fullBody.confidence}% confidence). Grading may be less accurate.`
+        );
+      }
+
+      setUploadProgress(100);
+    } catch (err) {
+      setError('Failed to process image');
+      console.error(err);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) {
+      processFile(droppedFile);
+    }
+  };
+
+  // ========================================================================
+  // GRADING & UPLOAD
+  // ========================================================================
+
+  const handleUploadAndGrade = async () => {
+    if (!file || !user || !userData) {
+      setError('Missing required information');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setStep('analyzing');
+
+    try {
+      // Step 1: Upload photo to Supabase Storage
+      setUploadProgress(10);
+      const fileName = `${user.id}/${Date.now()}-${file.name}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('uniform-photos')
+        .upload(fileName, file);
+
+      if (uploadError) throw new Error(uploadError.message);
+      setUploadProgress(40);
+
+      // Step 2: Get public URL
+      const { data: urlData } = supabase.storage
+        .from('uniform-photos')
+        .getPublicUrl(fileName);
+
+      const photoUrl = urlData.publicUrl;
+      setUploadProgress(50);
+
+      // Step 3: Analyze uniform using rule-based logic
+      const gradingData = await analyzeUniform(preview);
+
+      if (!gradingData) {
+        throw new Error('Failed to analyze uniform');
+      }
+      setUploadProgress(70);
+
+      // Step 4: Save grade to database
+      const dbResult = await saveGradingResult(userData.id, gradingData, photoUrl);
+
+      if (!dbResult.success) {
+        throw new Error(dbResult.error);
+      }
+      setUploadProgress(90);
+
+      // Step 5: Display result
+      setGradingResult({
+        ...gradingData,
+        gradeId: dbResult.gradeId,
+        photoUrl: photoUrl,
+      });
+
+      setUploadProgress(100);
+      setStep('result');
+    } catch (err) {
+      setError(err.message || 'Failed to upload and grade');
+      setStep('upload');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ========================================================================
+  // UTILITY FUNCTIONS
+  // ========================================================================
+
+  const getGradeColor = (grade) => {
+    const colors = {
+      A: 'text-green-600 bg-green-50 border-green-300',
+      B: 'text-blue-600 bg-blue-50 border-blue-300',
+      C: 'text-yellow-600 bg-yellow-50 border-yellow-300',
+      D: 'text-orange-600 bg-orange-50 border-orange-300',
+      F: 'text-red-600 bg-red-50 border-red-300',
+    };
+    return colors[grade] || 'text-gray-600 bg-gray-50 border-gray-300';
+  };
+
+  const getGradeMessage = (grade) => {
+    const messages = {
+      A: 'Excellent! Keep up the great work! 🎉',
+      B: 'Very good! You can do even better.',
+      C: 'Good effort. Keep improving! 💪',
+      D: 'You need to improve your uniform standards.',
+      F: 'Please correct your uniform and try again.',
+    };
+    return messages[grade] || 'Check your grade';
+  };
+
+  // ========================================================================
+  // RENDER
+  // ========================================================================
 
   if (loading && step === 'analyzing') {
     return <LoadingSpinner />;
@@ -192,21 +343,23 @@ export default function PhotoUpload() {
 
         {/* Error Message */}
         {error && (
-          <div className={`mb-6 p-4 rounded-lg border ${
-            error.includes('Warning')
-              ? 'bg-yellow-50 border-yellow-200'
-              : 'bg-red-50 border-red-200'
-          }`}>
+          <div
+            className={`mb-6 p-4 rounded-lg border ${
+              error.includes('Warning')
+                ? 'bg-yellow-50 border-yellow-200'
+                : 'bg-red-50 border-red-200'
+            }`}
+          >
             <p className={error.includes('Warning') ? 'text-yellow-700' : 'text-red-700'}>
               {error}
             </p>
           </div>
         )}
 
-        {/* UPLOAD STEP */}
+        {/* ====== UPLOAD STEP ====== */}
         {step === 'upload' && (
           <div className="bg-white rounded-lg shadow-lg p-8">
-            {/* Drag and Drop Area */}
+            {/* Drag & Drop Upload Area */}
             <div
               onClick={() => fileInputRef.current?.click()}
               onDragOver={handleDragOver}
@@ -227,7 +380,7 @@ export default function PhotoUpload() {
               />
             </div>
 
-            {/* Preview and Quality Check */}
+            {/* Preview & Analysis */}
             {preview && (
               <div className="mt-8">
                 <h3 className="font-semibold text-gray-800 mb-4">Preview</h3>
@@ -254,11 +407,15 @@ export default function PhotoUpload() {
                     </div>
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <p className="text-xs text-gray-600">Quality</p>
-                      <p className={`text-lg font-bold ${
-                        imageQuality.qualityScore >= 75 ? 'text-green-600' : 
-                        imageQuality.qualityScore >= 50 ? 'text-yellow-600' : 
-                        'text-red-600'
-                      }`}>
+                      <p
+                        className={`text-lg font-bold ${
+                          imageQuality.qualityScore >= 75
+                            ? 'text-green-600'
+                            : imageQuality.qualityScore >= 50
+                            ? 'text-yellow-600'
+                            : 'text-red-600'
+                        }`}
+                      >
                         {imageQuality.qualityLevel}
                       </p>
                     </div>
@@ -280,6 +437,22 @@ export default function PhotoUpload() {
                   )}
                 </div>
 
+                {/* Progress Bar (if uploading) */}
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                  <div className="mb-6">
+                    <div className="flex justify-between text-sm text-gray-600 mb-2">
+                      <span>Processing...</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-indigo-600 h-2 rounded-full transition-all"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-4">
                   <button
@@ -294,6 +467,7 @@ export default function PhotoUpload() {
                       setPreview(null);
                       setFile(null);
                       setImageQuality(null);
+                      setUploadProgress(0);
                     }}
                     className="flex-1 px-6 py-3 bg-gray-400 hover:bg-gray-500 text-white font-medium rounded-lg transition"
                   >
@@ -318,7 +492,7 @@ export default function PhotoUpload() {
           </div>
         )}
 
-        {/* RESULT STEP */}
+        {/* ====== RESULT STEP ====== */}
         {step === 'result' && gradingResult && (
           <div className="bg-white rounded-lg shadow-lg p-8">
             {/* Grade Header */}
@@ -327,117 +501,28 @@ export default function PhotoUpload() {
               <div className={`inline-block p-8 rounded-lg border-4 ${getGradeColor(gradingResult.grade)}`}>
                 <div className="text-7xl font-bold">{gradingResult.grade}</div>
                 <div className="text-3xl font-semibold mt-2">{gradingResult.score}/100</div>
+                <p className="text-center mt-2">{getGradeMessage(gradingResult.grade)}</p>
               </div>
             </div>
 
-            {/* Photo Preview */}
-            <div className="mb-8">
-              <img
-                src={gradingResult.photoUrl}
-                alt="Uploaded uniform"
-                className="w-full max-h-96 object-cover rounded-lg"
-              />
-            </div>
-
-            {/* Score Breakdown */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-gray-800 mb-4 text-lg">Score Breakdown</h3>
-              <div className="space-y-4">
-                {/* Shirt */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-semibold text-gray-800">👕 Shirt</span>
-                    <span className={`text-lg font-bold px-3 py-1 rounded-full ${getScoreColor(gradingResult.breakdown.shirt)}`}>
-                      {gradingResult.breakdown.shirt}/100
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                    <div
-                      className={`h-2 rounded-full ${getProgressColor(gradingResult.breakdown.shirt)}`}
-                      style={{ width: `${gradingResult.breakdown.shirt}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-gray-600">{gradingResult.feedback.shirt}</p>
-                </div>
-
-                {/* Pants */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-semibold text-gray-800">👖 Pants</span>
-                    <span className={`text-lg font-bold px-3 py-1 rounded-full ${getScoreColor(gradingResult.breakdown.pant)}`}>
-                      {gradingResult.breakdown.pant}/100
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                    <div
-                      className={`h-2 rounded-full ${getProgressColor(gradingResult.breakdown.pant)}`}
-                      style={{ width: `${gradingResult.breakdown.pant}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-gray-600">{gradingResult.feedback.pant}</p>
-                </div>
-
-                {/* Shoes */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-semibold text-gray-800">👞 Shoes</span>
-                    <span className={`text-lg font-bold px-3 py-1 rounded-full ${getScoreColor(gradingResult.breakdown.shoes)}`}>
-                      {gradingResult.breakdown.shoes}/100
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                    <div
-                      className={`h-2 rounded-full ${getProgressColor(gradingResult.breakdown.shoes)}`}
-                      style={{ width: `${gradingResult.breakdown.shoes}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-gray-600">{gradingResult.feedback.shoes}</p>
-                </div>
-
-                {/* Grooming */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-semibold text-gray-800">💇 Grooming</span>
-                    <span className={`text-lg font-bold px-3 py-1 rounded-full ${getScoreColor(gradingResult.breakdown.grooming)}`}>
-                      {gradingResult.breakdown.grooming}/100
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                    <div
-                      className={`h-2 rounded-full ${getProgressColor(gradingResult.breakdown.grooming)}`}
-                      style={{ width: `${gradingResult.breakdown.grooming}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-gray-600">{gradingResult.feedback.grooming}</p>
-                </div>
-
-                {/* Cleanliness */}
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-semibold text-gray-800">✨ Cleanliness</span>
-                    <span className={`text-lg font-bold px-3 py-1 rounded-full ${getScoreColor(gradingResult.breakdown.cleanliness)}`}>
-                      {gradingResult.breakdown.cleanliness}/100
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                    <div
-                      className={`h-2 rounded-full ${getProgressColor(gradingResult.breakdown.cleanliness)}`}
-                      style={{ width: `${gradingResult.breakdown.cleanliness}%` }}
-                    />
-                  </div>
-                  <p className="text-sm text-gray-600">{gradingResult.feedback.cleanliness}</p>
-                </div>
-              </div>
-            </div>
+            {/* Use GradeBreakdown Component */}
+            <GradeBreakdown
+              breakdown={gradingResult.breakdown}
+              feedback={gradingResult.feedback}
+              showPhoto={true}
+              photoUrl={gradingResult.photoUrl}
+              compact={false}
+            />
 
             {/* Action Buttons */}
-            <div className="flex gap-4">
+            <div className="mt-8 flex gap-4">
               <button
                 onClick={() => {
                   setGradingResult(null);
                   setPreview(null);
                   setFile(null);
                   setStep('upload');
+                  setUploadProgress(0);
                 }}
                 className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition"
               >
