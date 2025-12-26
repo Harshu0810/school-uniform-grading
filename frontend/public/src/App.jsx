@@ -107,7 +107,14 @@ function App() {
               />
             }
           />
-
+          <Route
+            path="/admin/analytics"
+            element={
+              <ProtectedRoute
+                element={<AdminAnalytics />}
+                requiredRole="admin"/>
+            }
+            />
           {/* ==================== ERROR & FALLBACK ROUTES ==================== */}
           
           <Route path="/admin-denied" element={<AccessDeniedPage />} />
