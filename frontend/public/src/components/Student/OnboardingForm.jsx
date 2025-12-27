@@ -1,13 +1,10 @@
-// pages/Student/Onboarding.jsx
-// First-time student profile completion
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { createStudentProfile } from '../../services/authService';
-import LoadingSpinner from '../../components/Common/LoadingSpinner';
+import LoadingSpinner from '../Common/LoadingSpinner';
 
-export default function StudentOnboarding() {
+export default function OnboardingForm() {
   const navigate = useNavigate();
   const { user } = useAuth();
   
@@ -77,7 +74,6 @@ export default function StudentOnboarding() {
         return;
       }
 
-      // Profile created successfully → redirect to dashboard
       navigate('/dashboard');
     } catch (err) {
       setError('An unexpected error occurred');
@@ -93,22 +89,18 @@ export default function StudentOnboarding() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
-        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Complete Your Profile</h1>
           <p className="text-gray-600">Welcome! Let's get you set up.</p>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-red-700 text-sm">{error}</p>
           </div>
         )}
 
-        {/* Onboarding Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Full Name */}
           <div>
             <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
               Full Name
@@ -125,7 +117,6 @@ export default function StudentOnboarding() {
             />
           </div>
 
-          {/* Class */}
           <div>
             <label htmlFor="class" className="block text-sm font-medium text-gray-700 mb-2">
               Class
@@ -142,7 +133,6 @@ export default function StudentOnboarding() {
             />
           </div>
 
-          {/* Section */}
           <div>
             <label htmlFor="section" className="block text-sm font-medium text-gray-700 mb-2">
               Section
@@ -163,7 +153,6 @@ export default function StudentOnboarding() {
             </select>
           </div>
 
-          {/* Roll Number */}
           <div>
             <label htmlFor="rollNumber" className="block text-sm font-medium text-gray-700 mb-2">
               Roll Number
@@ -180,7 +169,6 @@ export default function StudentOnboarding() {
             />
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
@@ -190,11 +178,9 @@ export default function StudentOnboarding() {
           </button>
         </form>
 
-        {/* Info Box */}
         <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
           <p className="text-blue-800 text-xs">
             <strong>Note:</strong> This information will be used for your records and grading.
-            Make sure everything is correct.
           </p>
         </div>
       </div>
