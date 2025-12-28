@@ -116,7 +116,6 @@ function App() {
             />
           {/* ==================== ERROR & FALLBACK ROUTES ==================== */}
           
-          <Route path="/admin-denied" element={<AccessDeniedPage />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
