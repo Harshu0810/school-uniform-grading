@@ -1,6 +1,11 @@
-// utils/gradingLogic.js
-// Rule-based uniform grading algorithm
-// Analyzes image properties without paid AI APIs
+// frontend/src/services/gradingService.js
+// Combined service for grading logic and database operations
+
+import { supabase } from './authService';
+
+// ============================================================================
+// GRADING LOGIC - IMAGE ANALYSIS
+// ============================================================================
 
 /**
  * Main function to analyze uniform and generate grade
@@ -115,33 +120,29 @@ function calculateImageStats(data) {
 function scoreShirt(stats, img) {
   let score = 100;
 
-  // Check if image has proper lighting (not too dark)
   if (stats.avgBrightness < 80) {
-    score -= 20; // Poor lighting
+    score -= 20;
   } else if (stats.avgBrightness > 220) {
-    score -= 10; // Overexposed
+    score -= 10;
   }
 
-  // Check color consistency (low variation = uniform color)
   const colorVariation = Math.abs(stats.avgRed - stats.avgGreen) + 
                          Math.abs(stats.avgGreen - stats.avgBlue);
   
   if (colorVariation > 100) {
-    score -= 15; // Too much color variation
+    score -= 15;
   } else if (colorVariation > 50) {
     score -= 5;
   }
 
-  // Check for dark areas (wrinkles, shadows = bad)
   if (stats.darkPixelRatio > 0.4) {
-    score -= 20; // Too many dark pixels (wrinkled/dirty)
+    score -= 20;
   } else if (stats.darkPixelRatio > 0.25) {
     score -= 10;
   }
 
-  // Ensure at least some white (for contrast/visibility)
   if (stats.whitePixelRatio < 0.05) {
-    score -= 15; // Possibly not wearing shirt or all dark
+    score -= 15;
   }
 
   return Math.max(0, Math.min(100, score));
@@ -156,7 +157,6 @@ function scoreShirt(stats, img) {
 function scorePants(stats, img) {
   let score = 100;
 
-  // Extract lower half of image (where pants would be)
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = img.width;
@@ -174,22 +174,19 @@ function scorePants(stats, img) {
   }
   lowerBrightness /= lowerPixels;
 
-  // Pants should be darker (typically 60-150 brightness)
   if (lowerBrightness < 50 || lowerBrightness > 160) {
-    score -= 25; // Too light or too dark
+    score -= 25;
   } else if (lowerBrightness < 60 || lowerBrightness > 150) {
     score -= 10;
   }
 
-  // Check for uniformity in lower half
   const colorVariation = Math.abs(stats.avgRed - stats.avgGreen) + 
                          Math.abs(stats.avgGreen - stats.avgBlue);
   
   if (colorVariation > 80) {
-    score -= 15; // Not uniform color
+    score -= 15;
   }
 
-  // Check dark pixel ratio in lower half
   let lowerDarkPixels = 0;
   for (let i = 0; i < lowerData.length; i += 4) {
     const brightness = (lowerData[i] + lowerData[i + 1] + lowerData[i + 2]) / 3;
@@ -198,7 +195,7 @@ function scorePants(stats, img) {
 
   const lowerDarkRatio = lowerDarkPixels / lowerPixels;
   if (lowerDarkRatio > 0.5) {
-    score -= 15; // Too many dark/wrinkled areas
+    score -= 15;
   } else if (lowerDarkRatio > 0.3) {
     score -= 8;
   }
@@ -215,7 +212,6 @@ function scorePants(stats, img) {
 function scoreShoes(stats, img) {
   let score = 100;
 
-  // Extract bottom 15% of image (where shoes would be)
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = img.width;
@@ -234,14 +230,12 @@ function scoreShoes(stats, img) {
   }
   bottomBrightness /= bottomPixels;
 
-  // Shoes should be relatively dark (50-140 brightness)
   if (bottomBrightness < 40 || bottomBrightness > 180) {
-    score -= 30; // Shoes not visible or very light
+    score -= 30;
   } else if (bottomBrightness < 50 || bottomBrightness > 160) {
     score -= 15;
   }
 
-  // Check for shoe visibility (should have some dark areas)
   let bottomDarkPixels = 0;
   for (let i = 0; i < bottomData.length; i += 4) {
     const brightness = (bottomData[i] + bottomData[i + 1] + bottomData[i + 2]) / 3;
@@ -250,14 +244,13 @@ function scoreShoes(stats, img) {
 
   const bottomDarkRatio = bottomDarkPixels / bottomPixels;
   if (bottomDarkRatio < 0.2) {
-    score -= 25; // Shoes not visible enough
+    score -= 25;
   } else if (bottomDarkRatio < 0.35) {
     score -= 10;
   }
 
-  // Overall image brightness affects shoe visibility
   if (stats.avgBrightness < 70) {
-    score -= 10; // Too dark overall
+    score -= 10;
   }
 
   return Math.max(0, Math.min(100, score));
@@ -272,7 +265,6 @@ function scoreShoes(stats, img) {
 function scoreGrooming(stats, img) {
   let score = 100;
 
-  // Extract top 30% of image (where head/grooming would be)
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = img.width;
@@ -291,14 +283,12 @@ function scoreGrooming(stats, img) {
   }
   topBrightness /= topPixels;
 
-  // Face should be well-lit (brightness > 100)
   if (topBrightness < 90) {
-    score -= 20; // Poor lighting on face
+    score -= 20;
   } else if (topBrightness > 230) {
-    score -= 10; // Overexposed face
+    score -= 10;
   }
 
-  // Check for shadows (too many dark pixels on face)
   let topDarkPixels = 0;
   for (let i = 0; i < topData.length; i += 4) {
     const brightness = (topData[i] + topData[i + 1] + topData[i + 2]) / 3;
@@ -307,17 +297,16 @@ function scoreGrooming(stats, img) {
 
   const topDarkRatio = topDarkPixels / topPixels;
   if (topDarkRatio > 0.4) {
-    score -= 25; // Too many shadows (messy hair/grooming)
+    score -= 25;
   } else if (topDarkRatio > 0.25) {
     score -= 10;
   }
 
-  // Check overall image quality
   const colorVariation = Math.abs(stats.avgRed - stats.avgGreen) + 
                          Math.abs(stats.avgGreen - stats.avgBlue);
   
   if (colorVariation > 120) {
-    score -= 15; // Poor photo quality
+    score -= 15;
   }
 
   return Math.max(0, Math.min(100, score));
@@ -332,35 +321,31 @@ function scoreGrooming(stats, img) {
 function scoreCleanliness(stats, img) {
   let score = 100;
 
-  // Check overall brightness (clean clothes should be relatively bright)
   if (stats.avgBrightness < 100) {
-    score -= 25; // Too dark (dirty/stained)
+    score -= 25;
   } else if (stats.avgBrightness < 120) {
     score -= 10;
   }
 
-  // Check dark pixel ratio (stains/dirt = dark pixels)
   if (stats.darkPixelRatio > 0.45) {
-    score -= 25; // Too many dark areas (very dirty)
+    score -= 25;
   } else if (stats.darkPixelRatio > 0.35) {
     score -= 15;
   } else if (stats.darkPixelRatio > 0.25) {
     score -= 8;
   }
 
-  // Check white pixel ratio (clean clothes have more white/light areas)
   if (stats.whitePixelRatio < 0.1) {
-    score -= 15; // Not bright enough
+    score -= 15;
   } else if (stats.whitePixelRatio < 0.15) {
     score -= 5;
   }
 
-  // Check color saturation (vibrant colors = clean)
   const colorVariation = Math.abs(stats.avgRed - stats.avgGreen) + 
                          Math.abs(stats.avgGreen - stats.avgBlue);
   
   if (colorVariation < 15) {
-    score -= 10; // Too gray/washed out (looks dirty)
+    score -= 10;
   }
 
   return Math.max(0, Math.min(100, score));
@@ -423,7 +408,6 @@ function getCleanlinesFeedback(score) {
  * Calculate final grade from component scores
  */
 function calculateFinalGrade(scores) {
-  // Weighted average
   const weights = {
     shirt: 0.25,
     pant: 0.25,
@@ -440,7 +424,6 @@ function calculateFinalGrade(scores) {
     scores.cleanliness * weights.cleanliness
   );
 
-  // Convert to letter grade
   let finalGrade;
   if (finalScore >= 85) finalGrade = 'A';
   else if (finalScore >= 70) finalGrade = 'B';
@@ -474,3 +457,150 @@ function getDefaultGrade() {
     },
   };
 }
+
+// ============================================================================
+// DATABASE OPERATIONS
+// ============================================================================
+
+/**
+ * Save grading result to Supabase database
+ * @param {string} userId - User ID
+ * @param {Object} gradingData - Grading result with score, grade, breakdown, feedback
+ * @param {string} photoUrl - URL of the uploaded photo
+ * @returns {Object} Success status and gradeId
+ */
+export const saveGradingResult = async (userId, gradingData, photoUrl) => {
+  try {
+    const gradeRecord = {
+      user_id: userId,
+      photo_url: photoUrl,
+      final_score: gradingData.score,
+      final_grade: gradingData.grade,
+      shirt_score: gradingData.breakdown.shirt,
+      pant_score: gradingData.breakdown.pant,
+      shoes_score: gradingData.breakdown.shoes,
+      grooming_score: gradingData.breakdown.grooming,
+      cleanliness_score: gradingData.breakdown.cleanliness,
+      feedback: JSON.stringify(gradingData.feedback),
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('grades')
+      .insert([gradeRecord])
+      .select();
+
+    if (error) {
+      console.error('Database error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to save grade to database',
+      };
+    }
+
+    if (!data || data.length === 0) {
+      return {
+        success: false,
+        error: 'No data returned from database',
+      };
+    }
+
+    return {
+      success: true,
+      gradeId: data[0].id,
+      message: 'Grade saved successfully',
+    };
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    return {
+      success: false,
+      error: err.message || 'An unexpected error occurred',
+    };
+  }
+};
+
+/**
+ * Fetch all grades for a specific user
+ * @param {string} userId - User ID
+ * @returns {Array} Array of grade records
+ */
+export const getUserGrades = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('grades')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching grades:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    return [];
+  }
+};
+
+/**
+ * Fetch a single grade by ID
+ * @param {string} gradeId - Grade ID
+ * @returns {Object} Grade record or null
+ */
+export const getGradeById = async (gradeId) => {
+  try {
+    const { data, error } = await supabase
+      .from('grades')
+      .select('*')
+      .eq('id', gradeId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching grade:', error);
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    return null;
+  }
+};
+
+/**
+ * Get statistics for all users (admin only)
+ * @returns {Object} Statistics data
+ */
+export const getGradeStatistics = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('grades')
+      .select('final_score, final_grade, user_id, created_at');
+
+    if (error) {
+      console.error('Error fetching statistics:', error);
+      return null;
+    }
+
+    const stats = {
+      totalGrades: data.length,
+      averageScore: data.length > 0 
+        ? Math.round(data.reduce((sum, g) => sum + g.final_score, 0) / data.length)
+        : 0,
+      gradeDistribution: {
+        A: data.filter(g => g.final_grade === 'A').length,
+        B: data.filter(g => g.final_grade === 'B').length,
+        C: data.filter(g => g.final_grade === 'C').length,
+        D: data.filter(g => g.final_grade === 'D').length,
+        F: data.filter(g => g.final_grade === 'F').length,
+      },
+    };
+
+    return stats;
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    return null;
+  }
+};
