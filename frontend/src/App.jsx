@@ -9,18 +9,18 @@ import { ProtectedRoute } from './components/Common/ProtectedRoute';
 // Auth Pages
 import LoginPage from './components/Auth/LoginPage';
 import SignupPage from './components/Auth/SignupPage';
-import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
-import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
+//import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
+//import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
 
 // Student Pages
-import StudentOnboarding from './pages/Student/Onboarding';
-import StudentDashboard from './pages/Student/Dashboard';
-import PhotoUploadPage from './pages/Student/PhotoUpload';
-import GradeHistoryPage from './pages/Student/GradeHistory';
+import StudentOnboarding from './components/Student/OnboardingForm';
+import StudentDashboard from './components/Student/Dashboard';
+import PhotoUploadPage from './components/Student/PhotoUpload';
+import GradeHistoryPage from './components/Student/GradeHistory';
 
 // Admin Pages
-import AdminDashboard from './pages/Admin/Dashboard';
-import AdminAnalytics from './pages/Admin/Analytics';
+import AdminDashboard from './components/Admin/Dashboard';
+import AdminAnalytics from './components/Admin/Analytics';
 
 // Common Pages
 import NotFoundPage from './pages/NotFound';
