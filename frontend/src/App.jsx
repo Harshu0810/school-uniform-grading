@@ -24,7 +24,6 @@ import AdminAnalytics from './pages/Admin/Analytics';
 
 // Common Pages
 import NotFoundPage from './pages/NotFound';
-import AccessDeniedPage from './pages/AccessDenied';
 
 function App() {
   return (
