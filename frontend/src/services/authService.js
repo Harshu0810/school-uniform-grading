@@ -12,7 +12,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export const signupStudent = async (email, password, admissionNumber) => {
   try {
-    // Step 1: Create auth user in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -25,8 +24,6 @@ export const signupStudent = async (email, password, admissionNumber) => {
       return { success: false, error: authError.message };
     }
 
-    // Step 2: Store admission number temporarily (they'll complete profile on first login)
-    // Note: We don't create the student record yet - that happens after email verification
     localStorage.setItem('temp_admission_number', admissionNumber);
 
     return {
@@ -45,7 +42,6 @@ export const signupStudent = async (email, password, admissionNumber) => {
 
 export const login = async (email, password) => {
   try {
-    // Step 1: Authenticate with email/password
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -57,7 +53,6 @@ export const login = async (email, password) => {
 
     const user = authData.user;
 
-    // Step 2: Check if email is verified
     if (!user.email_confirmed_at) {
       return {
         success: false,
@@ -65,7 +60,7 @@ export const login = async (email, password) => {
       };
     }
 
-    // Step 3: Check if user is admin
+    // Check if user is admin
     const { data: adminData, error: adminError } = await supabase
       .from('admin_users')
       .select('*')
@@ -73,16 +68,15 @@ export const login = async (email, password) => {
       .single();
 
     if (!adminError && adminData) {
-      // User is admin
       return {
         success: true,
         userType: 'admin',
         user,
-        admin: adminData,
+        userData: adminData,
       };
     }
 
-    // Step 4: Check if user is student
+    // Check if user is student
     const { data: studentData, error: studentError } = await supabase
       .from('students')
       .select('*')
@@ -90,20 +84,20 @@ export const login = async (email, password) => {
       .single();
 
     if (!studentError && studentData) {
-      // User is student with completed profile
       return {
         success: true,
         userType: 'student',
         user,
-        student: studentData,
+        userData: studentData,
       };
     }
 
-    // Step 5: User is student but profile not completed (first login)
+    // User is student but profile not completed (first login)
     return {
       success: true,
       userType: 'student',
       user,
+      userData: null,
       needsOnboarding: true,
     };
   } catch (error) {
@@ -137,10 +131,9 @@ export const createStudentProfile = async (userId, profileData) => {
       return { success: false, error: error.message };
     }
 
-    // Clear temp storage
     localStorage.removeItem('temp_admission_number');
 
-    return { success: true, student: data };
+    return { success: true, userData: data };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -158,10 +151,9 @@ export const getCurrentUser = async () => {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return { success: false, user: null };
+      return { success: false, user: null, userType: null, userData: null };
     }
 
-    // Get user type (student or admin)
     let userType = null;
     let userData = null;
 
@@ -196,7 +188,7 @@ export const getCurrentUser = async () => {
       userData,
     };
   } catch (error) {
-    return { success: false, error: error.message, user: null };
+    return { success: false, error: error.message, user: null, userType: null, userData: null };
   }
 };
 
@@ -212,7 +204,6 @@ export const logout = async () => {
       return { success: false, error: error.message };
     }
 
-    // Clear local storage
     localStorage.removeItem('temp_admission_number');
 
     return { success: true, message: 'Logged out successfully' };
@@ -230,17 +221,28 @@ export const onAuthStateChange = (callback) => {
     async (event, session) => {
       if (event === 'SIGNED_IN') {
         const userInfo = await getCurrentUser();
-        callback({ event, user: session.user, ...userInfo });
+        callback({
+          event,
+          user: session.user,
+          userType: userInfo.userType,
+          userData: userInfo.userData,
+          success: userInfo.success,
+        });
       } else if (event === 'SIGNED_OUT') {
-        callback({ event, user: null, userType: null });
+        callback({ event, user: null, userType: null, userData: null });
       } else if (event === 'USER_UPDATED') {
         const userInfo = await getCurrentUser();
-        callback({ event, user: session.user, ...userInfo });
+        callback({
+          event,
+          user: session.user,
+          userType: userInfo.userType,
+          userData: userInfo.userData,
+          success: userInfo.success,
+        });
       }
     }
   );
 
-  // Return unsubscribe function
   return listener?.subscription?.unsubscribe || (() => {});
 };
 
