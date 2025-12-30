@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/authService';
 import { saveGradingResult } from '../../services/gradingService';
-import { analyzeUniform } from '../../utils/gradingLogic';
+import { analyzeUniform } from '../../services/gradingService';
 import {
   validateImageFile,
   fileToDataUrl,
@@ -17,6 +17,17 @@ import {
 } from '../../utils/imageProcessing';
 import LoadingSpinner from '../Common/LoadingSpinner';
 import Navbar from '../Common/Navbar';
+
+// ============================================================================
+// UTILITY: Sanitize filename for Supabase
+// ============================================================================
+const sanitizeFileName = (filename) => {
+  return filename
+    .replace(/[^a-zA-Z0-9.-]/g, '_')
+    .replace(/_{2,}/g, '_')
+    .toLowerCase()
+    .substring(0, 100);
+};
 
 // ============================================================================
 // SUB-COMPONENT: GradeBreakdown
@@ -78,7 +89,6 @@ function GradeBreakdown({
     },
   ];
 
-  // Compact view - for lists/sidebars
   if (compact) {
     return (
       <div className="space-y-2">
@@ -94,10 +104,8 @@ function GradeBreakdown({
     );
   }
 
-  // Full detailed view
   return (
     <div className="space-y-6">
-      {/* Photo Section */}
       {showPhoto && photoUrl && (
         <div>
           <h3 className="font-semibold text-gray-800 mb-3">Uniform Photo</h3>
@@ -109,13 +117,11 @@ function GradeBreakdown({
         </div>
       )}
 
-      {/* Component Breakdown */}
       <div>
         <h3 className="font-semibold text-gray-800 mb-4">Score Breakdown</h3>
         <div className="space-y-4">
           {components.map((comp) => (
             <div key={comp.label} className="border border-gray-200 rounded-lg p-4">
-              {/* Header */}
               <div className="flex justify-between items-center mb-2">
                 <span className="font-semibold text-gray-800">
                   {comp.icon} {comp.label}
@@ -125,7 +131,6 @@ function GradeBreakdown({
                 </span>
               </div>
 
-              {/* Progress Bar */}
               <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
                 <div
                   className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(comp.score)}`}
@@ -133,7 +138,6 @@ function GradeBreakdown({
                 />
               </div>
 
-              {/* Feedback */}
               <p className="text-sm text-gray-600">{comp.feedback}</p>
             </div>
           ))}
@@ -152,12 +156,11 @@ export default function PhotoUpload() {
   const { user, userData } = useAuth();
   const fileInputRef = useRef(null);
 
-  // State Management
   const [preview, setPreview] = useState(null);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState('upload'); // 'upload', 'analyzing', 'result'
+  const [step, setStep] = useState('upload');
   const [gradingResult, setGradingResult] = useState(null);
   const [imageQuality, setImageQuality] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -177,7 +180,6 @@ export default function PhotoUpload() {
     setError('');
     setUploadProgress(0);
 
-    // Step 1: Validate file
     const validation = validateImageFile(selectedFile);
     if (!validation.valid) {
       setError(validation.error);
@@ -187,18 +189,15 @@ export default function PhotoUpload() {
     setFile(selectedFile);
     setUploadProgress(20);
 
-    // Step 2: Create preview
     try {
       const dataUrl = await fileToDataUrl(selectedFile);
       setPreview(dataUrl);
       setUploadProgress(40);
 
-      // Step 3: Analyze image quality
       const quality = await analyzeImageQuality(dataUrl);
       setImageQuality(quality);
       setUploadProgress(60);
 
-      // Step 4: Check if full-body photo
       const fullBody = await isFullBodyPhoto(dataUrl);
       setUploadProgress(80);
 
@@ -244,15 +243,20 @@ export default function PhotoUpload() {
     setStep('analyzing');
 
     try {
-      // Step 1: Upload photo to Supabase Storage
+      // Step 1: Sanitize and upload photo to Supabase Storage
       setUploadProgress(10);
-      const fileName = `${user.id}/${Date.now()}-${file.name}`;
+      const sanitizedName = sanitizeFileName(file.name);
+      const timestamp = Date.now();
+      const fileName = `${user.id}/${timestamp}-${sanitizedName}`;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('uniform-photos')
         .upload(fileName, file);
 
-      if (uploadError) throw new Error(uploadError.message);
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
       setUploadProgress(40);
 
       // Step 2: Get public URL
@@ -272,10 +276,10 @@ export default function PhotoUpload() {
       setUploadProgress(70);
 
       // Step 4: Save grade to database
-      const dbResult = await saveGradingResult(userData.id, gradingData, photoUrl);
+      const dbResult = await saveGradingResult(user.id, gradingData, photoUrl);
 
       if (!dbResult.success) {
-        throw new Error(dbResult.error);
+        throw new Error(dbResult.error || 'Failed to save grade');
       }
       setUploadProgress(90);
 
@@ -291,7 +295,7 @@ export default function PhotoUpload() {
     } catch (err) {
       setError(err.message || 'Failed to upload and grade');
       setStep('upload');
-      console.error(err);
+      console.error('Upload error:', err);
     } finally {
       setLoading(false);
     }
@@ -437,7 +441,7 @@ export default function PhotoUpload() {
                   )}
                 </div>
 
-                {/* Progress Bar (if uploading) */}
+                {/* Progress Bar */}
                 {uploadProgress > 0 && uploadProgress < 100 && (
                   <div className="mb-6">
                     <div className="flex justify-between text-sm text-gray-600 mb-2">
