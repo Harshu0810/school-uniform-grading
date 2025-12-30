@@ -18,135 +18,120 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let isMounted = true;
 
-    // Check initial auth state on mount
-    const initializeAuth = async () => {
+    const initAuth = async () => {
       try {
-        // Get current session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          console.error('Session error:', sessionError);
-          if (isMounted) {
-            setLoading(false);
-          }
-          return;
-        }
+        // Check if there's an active session
+        const { data: { session } } = await supabase.auth.getSession();
 
         if (session?.user && isMounted) {
           setUser(session.user);
           
-          // Determine user type
-          let foundUserType = null;
-          let foundUserData = null;
-
+          // Try to get user type, but don't block if it fails
           try {
-            // Check if admin
-            const { data: adminData, error: adminError } = await supabase
+            // Check admin first
+            const { data: adminData } = await supabase
               .from('admin_users')
-              .select('*')
+              .select('id, email, full_name, role')
               .eq('user_id', session.user.id)
-              .single();
+              .maybeSingle();
 
-            if (!adminError && adminData) {
-              foundUserType = 'admin';
-              foundUserData = adminData;
-            } else {
-              // Check if student
-              const { data: studentData, error: studentError } = await supabase
-                .from('students')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .single();
-
-              if (!studentError && studentData) {
-                foundUserType = 'student';
-                foundUserData = studentData;
-              } else {
-                // User exists but no profile yet
-                foundUserType = 'student';
-                foundUserData = null;
-              }
+            if (adminData) {
+              setUserType('admin');
+              setUserData(adminData);
+              setLoading(false);
+              return;
             }
-          } catch (err) {
-            console.error('Error fetching user type:', err);
-            foundUserType = 'student';
-            foundUserData = null;
-          }
 
-          if (isMounted) {
-            setUserType(foundUserType);
-            setUserData(foundUserData);
+            // Check student
+            const { data: studentData } = await supabase
+              .from('students')
+              .select('id, user_id, full_name, class, section, roll_number')
+              .eq('user_id', session.user.id)
+              .maybeSingle();
+
+            if (studentData) {
+              setUserType('student');
+              setUserData(studentData);
+            } else {
+              // Student with no profile yet
+              setUserType('student');
+              setUserData(null);
+            }
+          } catch (dbErr) {
+            console.error('Database error:', dbErr);
+            // Don't block - set as student by default
+            setUserType('student');
+            setUserData(null);
           }
+        } else {
+          // No session - user is logged out
+          setUser(null);
+          setUserType(null);
+          setUserData(null);
+        }
+
+        if (isMounted) {
+          setLoading(false);
         }
       } catch (err) {
-        console.error('Error initializing auth:', err);
-      } finally {
+        console.error('Auth init error:', err);
         if (isMounted) {
           setLoading(false);
         }
       }
     };
 
-    initializeAuth();
+    initAuth();
 
-    // Set up auth state listener
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
 
+        console.log('Auth event:', event);
+
         if (event === 'SIGNED_IN' && session?.user) {
           setUser(session.user);
-
-          let foundUserType = null;
-          let foundUserData = null;
 
           try {
             const { data: adminData } = await supabase
               .from('admin_users')
-              .select('*')
+              .select('id, email, full_name, role')
               .eq('user_id', session.user.id)
-              .single();
+              .maybeSingle();
 
             if (adminData) {
-              foundUserType = 'admin';
-              foundUserData = adminData;
-            } else {
-              const { data: studentData } = await supabase
-                .from('students')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .single();
-
-              if (studentData) {
-                foundUserType = 'student';
-                foundUserData = studentData;
-              } else {
-                foundUserType = 'student';
-                foundUserData = null;
-              }
+              setUserType('admin');
+              setUserData(adminData);
+              return;
             }
-          } catch (err) {
-            console.error('Error fetching user type:', err);
-            foundUserType = 'student';
-            foundUserData = null;
-          }
 
-          if (isMounted) {
-            setUserType(foundUserType);
-            setUserData(foundUserData);
-            setError(null);
-          }
-        } else if (event === 'SIGNED_OUT') {
-          if (isMounted) {
-            setUser(null);
-            setUserType(null);
+            const { data: studentData } = await supabase
+              .from('students')
+              .select('id, user_id, full_name, class, section, roll_number')
+              .eq('user_id', session.user.id)
+              .maybeSingle();
+
+            if (studentData) {
+              setUserType('student');
+              setUserData(studentData);
+            } else {
+              setUserType('student');
+              setUserData(null);
+            }
+          } catch (dbErr) {
+            console.error('Error fetching user data:', dbErr);
+            setUserType('student');
             setUserData(null);
           }
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setUserType(null);
+          setUserData(null);
         }
       }
     );
 
-    // Cleanup
     return () => {
       isMounted = false;
       subscription?.unsubscribe();
@@ -167,7 +152,6 @@ export const AuthProvider = ({ children }) => {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom hook to use auth context
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
