@@ -464,61 +464,228 @@ function getDefaultGrade() {
 
 /**
  * Save grading result to Supabase database
- * @param {string} userId - User ID
+ * FIXED: Now properly inserts to both grades and grading_breakdown
+ * @param {string} userId - User ID from auth
  * @param {Object} gradingData - Grading result with score, grade, breakdown, feedback
  * @param {string} photoUrl - URL of the uploaded photo
  * @returns {Object} Success status and gradeId
  */
 export const saveGradingResult = async (userId, gradingData, photoUrl) => {
   try {
+    if (!userId) {
+      return {
+        success: false,
+        error: 'User ID is required',
+      };
+    }
+
+    if (!gradingData) {
+      return {
+        success: false,
+        error: 'Grading data is required',
+      };
+    }
+
+    // STEP 1: Get student_id from students table
+    // This is required because grades table has foreign key to students
+    console.log('Step 1: Fetching student profile for user:', userId);
+    
+    const { data: studentData, error: studentError } = await supabase
+      .from('students')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+
+    if (studentError) {
+      console.error('Student fetch error:', studentError);
+      return {
+        success: false,
+        error: 'Student profile not found. Please complete your profile first.',
+      };
+    }
+
+    if (!studentData?.id) {
+      return {
+        success: false,
+        error: 'Student ID not found. Please complete your profile first.',
+      };
+    }
+
+    const studentId = studentData.id;
+    console.log('Got student ID:', studentId);
+
+    // STEP 2: Insert into grades table
+    console.log('Step 2: Inserting into grades table');
+    
     const gradeRecord = {
       user_id: userId,
+      student_id: studentId,  // ✅ IMPORTANT: Include student_id
       photo_url: photoUrl,
-      final_score: gradingData.score,
-      final_grade: gradingData.grade,
-      shirt_score: gradingData.breakdown.shirt,
-      pant_score: gradingData.breakdown.pant,
-      shoes_score: gradingData.breakdown.shoes,
-      grooming_score: gradingData.breakdown.grooming,
-      cleanliness_score: gradingData.breakdown.cleanliness,
-      feedback: JSON.stringify(gradingData.feedback),
-      created_at: new Date().toISOString(),
+      final_score: parseFloat(gradingData.score) || 0,
+      final_grade: gradingData.grade || 'F',
+      feedback_text: '',
+      graded_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
+    console.log('Grade record:', gradeRecord);
+
+    const { data: gradeData, error: gradeError } = await supabase
       .from('grades')
       .insert([gradeRecord])
       .select();
 
-    if (error) {
-      console.error('Database error:', error);
+    if (gradeError) {
+      console.error('Grade insert error:', gradeError);
+      console.error('Error code:', gradeError.code);
+      console.error('Error message:', gradeError.message);
+      
+      // More helpful error messages
+      if (gradeError.message.includes('row-level security')) {
+        return {
+          success: false,
+          error: 'Permission denied: RLS policy blocked insert. Please try again or contact admin.',
+        };
+      }
+      
       return {
         success: false,
-        error: error.message || 'Failed to save grade to database',
+        error: `Failed to insert grade: ${gradeError.message}`,
       };
     }
 
-    if (!data || data.length === 0) {
+    if (!gradeData || gradeData.length === 0) {
       return {
         success: false,
         error: 'No data returned from database',
       };
     }
 
+    const gradeId = gradeData[0].id;
+    console.log('Grade inserted successfully, ID:', gradeId);
+
+    // STEP 3: Insert into grading_breakdown table
+    console.log('Step 3: Inserting into grading_breakdown table');
+    
+    const breakdownRecord = {
+      grade_id: gradeId,
+      shirt_score: parseFloat(gradingData.breakdown?.shirt) || 0,
+      pant_score: parseFloat(gradingData.breakdown?.pant) || 0,
+      shoes_score: parseFloat(gradingData.breakdown?.shoes) || 0,
+      grooming_score: parseFloat(gradingData.breakdown?.grooming) || 0,
+      cleanliness_score: parseFloat(gradingData.breakdown?.cleanliness) || 0,
+      shirt_feedback: gradingData.feedback?.shirt || '',
+      pant_feedback: gradingData.feedback?.pant || '',
+      shoes_feedback: gradingData.feedback?.shoes || '',
+      grooming_feedback: gradingData.feedback?.grooming || '',
+      cleanliness_feedback: gradingData.feedback?.cleanliness || '',
+    };
+
+    console.log('Breakdown record:', breakdownRecord);
+
+    const { data: breakdownData, error: breakdownError } = await supabase
+      .from('grading_breakdown')
+      .insert([breakdownRecord])
+      .select();
+
+    if (breakdownError) {
+      console.error('Breakdown insert error:', breakdownError);
+      
+      // If breakdown fails but grade was created, we still succeeded
+      // (trigger will calculate the score anyway)
+      console.warn('Breakdown insert failed but grade was created');
+      
+      return {
+        success: true,
+        gradeId: gradeId,
+        message: 'Grade created, but breakdown details may be incomplete',
+      };
+    }
+
+    console.log('Breakdown inserted successfully');
+
     return {
       success: true,
-      gradeId: data[0].id,
+      gradeId: gradeId,
       message: 'Grade saved successfully',
     };
+
   } catch (err) {
-    console.error('Unexpected error:', err);
+    console.error('Unexpected error in saveGradingResult:', err);
     return {
       success: false,
-      error: err.message || 'An unexpected error occurred',
+      error: err.message || 'An unexpected error occurred while saving grade',
     };
   }
 };
 
+// Keep all your other functions:
+// - analyzeUniform
+// - getUserGrades
+// - getGradeById
+// - getGradeStatistics
+// etc.
+
+// Export them as before
+export { analyzeUniform } from './gradingService'; // If in same file, use existing
+
+// ============================================================================
+// ADDITIONAL DEBUG HELPER - Optional
+// Use this to test RLS policies
+// ============================================================================
+
+/**
+ * Debug function to check if current user can insert grades
+ * Run this in browser console to debug RLS issues
+ */
+export const debugRLS = async () => {
+  try {
+    console.log('=== RLS Debug Info ===');
+    
+    // Check current auth
+    const { data: { user } } = await supabase.auth.getUser();
+    console.log('Current user:', user?.id);
+    console.log('Current email:', user?.email);
+
+    // Check if in admin_users
+    const { data: adminData } = await supabase
+      .from('admin_users')
+      .select('*')
+      .eq('user_id', user?.id);
+    
+    console.log('Is admin?', adminData && adminData.length > 0);
+    console.log('Admin data:', adminData);
+
+    // Check student profile
+    const { data: studentData } = await supabase
+      .from('students')
+      .select('*')
+      .eq('user_id', user?.id)
+      .single();
+    
+    console.log('Student profile:', studentData);
+
+    // Try to read own grades
+    const { data: grades, error: gradeError } = await supabase
+      .from('grades')
+      .select('*')
+      .eq('user_id', user?.id);
+    
+    console.log('Own grades readable?', !gradeError);
+    console.log('Grades error:', gradeError?.message);
+    console.log('Grades count:', grades?.length);
+
+    return {
+      userId: user?.id,
+      isAdmin: adminData && adminData.length > 0,
+      hasStudent: !!studentData,
+      canReadGrades: !gradeError,
+    };
+
+  } catch (err) {
+    console.error('Debug error:', err);
+    return { error: err.message };
+  }
+};
 /**
  * Fetch all grades for a specific user
  * @param {string} userId - User ID
