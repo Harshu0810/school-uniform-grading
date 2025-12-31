@@ -19,15 +19,20 @@ export default function StudentDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchLatestGrade();
-  }, [user?.id]);
+  // ✅ FIX: Only fetch if we have user info
+  if (!user?.id) {
+    setLoading(false);
+    return;
+  }
+
+  let isMounted = true;
 
   const fetchLatestGrade = async () => {
     try {
       setLoading(true);
       setError('');
 
-      // Get latest grade for this student
+      // Get latest grade for THIS student
       const { data, error: fetchError } = await supabase
         .from('grades')
         .select(
@@ -46,31 +51,46 @@ export default function StudentDashboard() {
           )
         `
         )
+        .eq('user_id', user.id)  // ✅ ADD THIS FILTER
         .order('graded_at', { ascending: false })
         .limit(1);
 
       if (fetchError) throw fetchError;
 
-      if (data && data.length > 0) {
-        setLatestGrade(data[0]);
+      if (isMounted) {
+        if (data && data.length > 0) {
+          setLatestGrade(data[0]);
+        }
       }
 
-      // Get total grade count
+      // Get total grade count for THIS student
       const { count, error: countError } = await supabase
         .from('grades')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);  // ✅ ADD THIS FILTER
 
-      if (!countError && count) {
+      if (!countError && count && isMounted) {
         setGradeCount(count);
       }
     } catch (err) {
-      setError('Failed to load grades');
-      console.error(err);
+      if (isMounted) {
+        setError('Failed to load grades');
+        console.error(err);
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   };
 
+  fetchLatestGrade();
+
+  // ✅ Cleanup function
+  return () => {
+    isMounted = false;
+  };
+}, [user?.id]);
   const getGradeColor = (grade) => {
     const colors = {
       A: 'text-green-600 bg-green-50',
