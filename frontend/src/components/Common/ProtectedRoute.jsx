@@ -1,21 +1,14 @@
-FILE 2: components/Common/ProtectedRoute.jsx - COMPLETE REPLACEMENT
-// ============================================================================
+// components/Common/ProtectedRoute.jsx
 
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
 
-/**
- * ProtectedRoute: Protects routes based on authentication and role
- * 
- * Props:
- * - element: Component to render if authorized
- * - requiredRole: 'student', 'admin', or 'authenticated' (any logged-in user)
- */
 export const ProtectedRoute = ({
   element,
   requiredRole = 'authenticated',
+  fallback = '/login',
 }) => {
   const { isAuthenticated, isStudent, isAdmin, loading } = useAuth();
 
@@ -29,44 +22,44 @@ export const ProtectedRoute = ({
     return <Navigate to="/login" replace />;
   }
 
-  // Check role-based access
+  // Check role and redirect appropriately
   switch (requiredRole) {
     case 'student':
-      // Only students can access student routes
-      if (isStudent) {
-        return element;
+      // Only students can access
+      if (!isStudent) {
+        // If admin, redirect to admin dashboard
+        if (isAdmin) {
+          return <Navigate to="/admin" replace />;
+        }
+        // Otherwise, redirect to login
+        return <Navigate to="/login" replace />;
       }
-      // If they're admin, redirect to admin dashboard
-      if (isAdmin) {
-        return <Navigate to="/admin" replace />;
-      }
-      // Otherwise redirect to login
-      return <Navigate to="/login" replace />;
+      break;
 
     case 'admin':
-      // Only admins can access admin routes
-      if (isAdmin) {
-        return element;
+      // Only admins can access
+      if (!isAdmin) {
+        // If student, redirect to student dashboard
+        if (isStudent) {
+          return <Navigate to="/dashboard" replace />;
+        }
+        // Otherwise, redirect to login
+        return <Navigate to="/login" replace />;
       }
-      // If they're student, redirect to student dashboard
-      if (isStudent) {
-        return <Navigate to="/dashboard" replace />;
-      }
-      // Otherwise redirect to login
-      return <Navigate to="/login" replace />;
+      break;
 
     case 'authenticated':
-      // Any authenticated user can access
-      return element;
+      // Any authenticated user
+      break;
 
     default:
-      return element;
+      break;
   }
+
+  // All checks passed → render component
+  return element;
 };
 
-/**
- * Hook for checking authorization inside components
- */
 export const useProtectedRoute = (requiredRole = 'authenticated') => {
   const { isAuthenticated, isStudent, isAdmin, loading } = useAuth();
 
