@@ -25,55 +25,69 @@ export default function AdminDashboard() {
   const [selectedStudent, setSelectedStudent] = useState(null);
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    let isMounted = true;
 
-  useEffect(() => {
-    applyFilters();
-  }, [students, searchQuery, gradeFilter, classFilter, sectionFilter]);
+    const fetchStudents = async () => {
+      try {
+        setLoading(true);
+        setError('');
 
-  const fetchStudents = async () => {
-    try {
-      setLoading(true);
-      setError('');
-
-      // Get all students with their latest grades
-      const { data, error: fetchError } = await supabase
-        .from('students')
-        .select(
-          `
-          id,
-          full_name,
-          class,
-          section,
-          roll_number,
-          created_at,
-          grades(
+        // Get all students with their latest grades
+        const { data, error: fetchError } = await supabase
+          .from('students')
+          .select(
+            `
             id,
-            final_grade,
-            final_score,
-            graded_at
-          )
-        `
-        );
+            full_name,
+            class,
+            section,
+            roll_number,
+            created_at,
+            grades(
+              id,
+              final_grade,
+              final_score,
+              graded_at
+            )
+          `
+          );
 
-      if (fetchError) throw fetchError;
+        if (fetchError) throw fetchError;
 
-      // Get latest grade for each student
-      const studentsWithLatestGrade = (data || []).map((student) => ({
-        ...student,
-        latestGrade: student.grades?.[0] || null,
-      }));
+        // Get latest grade for each student
+        const studentsWithLatestGrade = (data || []).map((student) => {
+          // Sort grades by date and get latest
+          const sortedGrades = student.grades?.sort((a, b) => 
+            new Date(b.graded_at) - new Date(a.graded_at)
+          ) || [];
 
-      setStudents(studentsWithLatestGrade);
-    } catch (err) {
-      setError('Failed to load students');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+          return {
+            ...student,
+            latestGrade: sortedGrades[0] || null,
+          };
+        });
 
+        if (isMounted) {
+          setStudents(studentsWithLatestGrade);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError('Failed to load students');
+          console.error(err);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchStudents();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const applyFilters = () => {
     let filtered = [...students];
 
