@@ -1,6 +1,8 @@
-
-// pages/Student/Dashboard.jsx
-// Main student dashboard showing latest grade and quick actions
+// ============================================================================
+// FILE: pages/Student/Dashboard.jsx - COMPLETE FIX FOR PAGE RELOAD ISSUE
+// ============================================================================
+// The problem: Visiting same page twice doesn't reload data
+// The cause: useEffect dependency array issues + state not resetting
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -18,79 +20,98 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // MAIN FIX: Fetch on component mount AND when user changes
   useEffect(() => {
-  // ✅ FIX: Only fetch if we have user info
-  if (!user?.id) {
-    setLoading(false);
-    return;
-  }
+    // Reset state when component mounts or user changes
+    setLatestGrade(null);
+    setGradeCount(0);
+    setError('');
 
-  let isMounted = true;
+    // Don't fetch if user not logged in
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
 
-  const fetchLatestGrade = async () => {
-    try {
-      setLoading(true);
-      setError('');
+    let isMounted = true;
+    let abortController = new AbortController();
 
-      // Get latest grade for THIS student
-      const { data, error: fetchError } = await supabase
-        .from('grades')
-        .select(
+    const fetchLatestGrade = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        // Small delay to ensure auth is ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Fetch latest grade
+        const { data, error: fetchError } = await supabase
+          .from('grades')
+          .select(
+            `
+            id,
+            final_grade,
+            final_score,
+            graded_at,
+            photo_url,
+            grading_breakdown(
+              shirt_score,
+              pant_score,
+              shoes_score,
+              grooming_score,
+              cleanliness_score
+            )
           `
-          id,
-          final_grade,
-          final_score,
-          graded_at,
-          photo_url,
-          grading_breakdown(
-            shirt_score,
-            pant_score,
-            shoes_score,
-            grooming_score,
-            cleanliness_score
           )
-        `
-        )
-        .eq('user_id', user.id)  // ✅ ADD THIS FILTER
-        .order('graded_at', { ascending: false })
-        .limit(1);
+          .eq('user_id', user.id)
+          .order('graded_at', { ascending: false })
+          .limit(1);
 
-      if (fetchError) throw fetchError;
+        if (abortController.signal.aborted) return;
 
-      if (isMounted) {
-        if (data && data.length > 0) {
-          setLatestGrade(data[0]);
+        if (fetchError) throw fetchError;
+
+        if (isMounted) {
+          if (data && data.length > 0) {
+            setLatestGrade(data[0]);
+          } else {
+            setLatestGrade(null);
+          }
+        }
+
+        // Fetch grade count
+        const { count, error: countError } = await supabase
+          .from('grades')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+
+        if (abortController.signal.aborted) return;
+
+        if (!countError && isMounted) {
+          setGradeCount(count || 0);
+        }
+      } catch (err) {
+        if (isMounted && !abortController.signal.aborted) {
+          setError('Failed to load grades');
+          console.error('Dashboard fetch error:', err);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
         }
       }
+    };
 
-      // Get total grade count for THIS student
-      const { count, error: countError } = await supabase
-        .from('grades')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);  // ✅ ADD THIS FILTER
+    fetchLatestGrade();
 
-      if (!countError && count && isMounted) {
-        setGradeCount(count);
-      }
-    } catch (err) {
-      if (isMounted) {
-        setError('Failed to load grades');
-        console.error(err);
-      }
-    } finally {
-      if (isMounted) {
-        setLoading(false);
-      }
-    }
-  };
+    // Cleanup
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
+  }, [user?.id]); // Run when user changes
 
-  fetchLatestGrade();
-
-  // ✅ Cleanup function
-  return () => {
-    isMounted = false;
-  };
-}, [user?.id]);
+  // Render functions...
   const getGradeColor = (grade) => {
     const colors = {
       A: 'text-green-600 bg-green-50',
