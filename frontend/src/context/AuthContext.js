@@ -1,5 +1,4 @@
-// FILE 1: context/AuthContext.js - COMPLETE REPLACEMENT
-// ============================================================================
+// context/AuthContext.js
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/authService';
@@ -25,6 +24,7 @@ export const AuthProvider = ({ children }) => {
         if (session?.user && isMounted) {
           setUser(session.user);
           
+          // Get user type and data
           try {
             // Check admin first
             const { data: adminData } = await supabase
@@ -51,13 +51,13 @@ export const AuthProvider = ({ children }) => {
               setUserType('student');
               setUserData(studentData);
             } else {
-              // Student with no profile yet
+              // Student exists but no profile
               setUserType('student');
               setUserData(null);
             }
           } catch (dbErr) {
-            console.error('Error fetching user data:', dbErr.message);
-            // Don't block - set as student by default
+            console.error('Error fetching user data:', dbErr);
+            // Don't break - set as student by default
             setUserType('student');
             setUserData(null);
           }
@@ -74,7 +74,6 @@ export const AuthProvider = ({ children }) => {
       } catch (err) {
         console.error('Auth init error:', err);
         if (isMounted) {
-          setError(err.message);
           setLoading(false);
         }
       }
@@ -87,7 +86,7 @@ export const AuthProvider = ({ children }) => {
       async (event, session) => {
         if (!isMounted) return;
 
-        console.log('Auth state change event:', event);
+        console.log('Auth event:', event);
 
         if (event === 'SIGNED_IN' && session?.user) {
           setUser(session.user);
@@ -121,7 +120,7 @@ export const AuthProvider = ({ children }) => {
               setUserData(null);
             }
           } catch (dbErr) {
-            console.error('Error fetching user type:', dbErr.message);
+            console.error('Error fetching user data:', dbErr);
             setUserType('student');
             setUserData(null);
           }
@@ -137,7 +136,7 @@ export const AuthProvider = ({ children }) => {
       isMounted = false;
       subscription?.unsubscribe();
     };
-  }, []); // Empty dependency array - only run on mount
+  }, []);
 
   const value = {
     user,
