@@ -1,13 +1,11 @@
-// context/AuthContext.js
-// Global state for authentication across the app
+// FILE 1: context/AuthContext.js - COMPLETE REPLACEMENT
+// ============================================================================
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/authService';
 
-// Create context
 const AuthContext = createContext(null);
 
-// Provider component
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userType, setUserType] = useState(null);
@@ -15,27 +13,27 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Initialize auth on mount
   useEffect(() => {
     let isMounted = true;
 
     const initAuth = async () => {
       try {
-        // Check if there's an active session
+        // Get current session
         const { data: { session } } = await supabase.auth.getSession();
 
         if (session?.user && isMounted) {
           setUser(session.user);
           
-          // Try to get user type, but don't block if it fails
           try {
             // Check admin first
             const { data: adminData } = await supabase
               .from('admin_users')
               .select('id, email, full_name, role')
               .eq('user_id', session.user.id)
-              .maybeSingle();
+              .single();
 
-            if (adminData) {
+            if (adminData && isMounted) {
               setUserType('admin');
               setUserData(adminData);
               setLoading(false);
@@ -47,9 +45,9 @@ export const AuthProvider = ({ children }) => {
               .from('students')
               .select('id, user_id, full_name, class, section, roll_number')
               .eq('user_id', session.user.id)
-              .maybeSingle();
+              .single();
 
-            if (studentData) {
+            if (studentData && isMounted) {
               setUserType('student');
               setUserData(studentData);
             } else {
@@ -58,13 +56,13 @@ export const AuthProvider = ({ children }) => {
               setUserData(null);
             }
           } catch (dbErr) {
-            console.error('Database error:', dbErr);
+            console.error('Error fetching user data:', dbErr.message);
             // Don't block - set as student by default
             setUserType('student');
             setUserData(null);
           }
         } else {
-          // No session - user is logged out
+          // No session
           setUser(null);
           setUserType(null);
           setUserData(null);
@@ -76,6 +74,7 @@ export const AuthProvider = ({ children }) => {
       } catch (err) {
         console.error('Auth init error:', err);
         if (isMounted) {
+          setError(err.message);
           setLoading(false);
         }
       }
@@ -83,22 +82,23 @@ export const AuthProvider = ({ children }) => {
 
     initAuth();
 
-    // Listen for auth changes
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
 
-        console.log('Auth event:', event);
+        console.log('Auth state change event:', event);
 
         if (event === 'SIGNED_IN' && session?.user) {
           setUser(session.user);
 
           try {
+            // Check admin first
             const { data: adminData } = await supabase
               .from('admin_users')
               .select('id, email, full_name, role')
               .eq('user_id', session.user.id)
-              .maybeSingle();
+              .single();
 
             if (adminData) {
               setUserType('admin');
@@ -106,11 +106,12 @@ export const AuthProvider = ({ children }) => {
               return;
             }
 
+            // Check student
             const { data: studentData } = await supabase
               .from('students')
               .select('id, user_id, full_name, class, section, roll_number')
               .eq('user_id', session.user.id)
-              .maybeSingle();
+              .single();
 
             if (studentData) {
               setUserType('student');
@@ -120,7 +121,7 @@ export const AuthProvider = ({ children }) => {
               setUserData(null);
             }
           } catch (dbErr) {
-            console.error('Error fetching user data:', dbErr);
+            console.error('Error fetching user type:', dbErr.message);
             setUserType('student');
             setUserData(null);
           }
@@ -136,7 +137,7 @@ export const AuthProvider = ({ children }) => {
       isMounted = false;
       subscription?.unsubscribe();
     };
-  }, []);
+  }, []); // Empty dependency array - only run on mount
 
   const value = {
     user,
