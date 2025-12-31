@@ -15,8 +15,13 @@ export default function GradeHistoryPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchGrades();
-  }, [userData?.id]);
+  // ✅ FIX: Only fetch if we have user info
+  if (!userData?.id) {
+    setLoading(false);
+    return;
+  }
+
+  let isMounted = true;
 
   const fetchGrades = async () => {
     try {
@@ -47,20 +52,34 @@ export default function GradeHistoryPage() {
           )
         `
         )
+        .eq('user_id', userData.user_id)  // ✅ ADD THIS FILTER
         .order('graded_at', { ascending: false });
 
       if (fetchError) throw fetchError;
 
-      setGrades(data || []);
+      if (isMounted) {
+        setGrades(data || []);
+      }
     } catch (err) {
-      setError('Failed to load grades');
-      console.error(err);
+      if (isMounted) {
+        setError('Failed to load grades');
+        console.error(err);
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   };
 
-  const getGradeColor = (grade) => {
+  fetchGrades();
+
+  // ✅ Cleanup function
+  return () => {
+    isMounted = false;
+  };
+}, [userData?.id, userData?.user_id]);
+    const getGradeColor = (grade) => {
     const colors = {
       A: 'bg-green-100 text-green-800',
       B: 'bg-blue-100 text-blue-800',
