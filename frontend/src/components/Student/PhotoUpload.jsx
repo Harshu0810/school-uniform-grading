@@ -1,6 +1,7 @@
-// components/Student/PhotoUpload.jsx
-// Combined file: Photo upload + grading + breakdown display
-// Ready for: frontend/src/components/Student/PhotoUpload.jsx
+// ============================================================================
+// FILE: components/Student/PhotoUpload.jsx - COMPLETE FIXED VERSION
+// This is the full file with all fixes for RLS and user_id issues
+// ============================================================================
 
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -229,89 +230,104 @@ export default function PhotoUpload() {
   };
 
   // ========================================================================
-  // GRADING & UPLOAD
+  // GRADING & UPLOAD - COMPLETE FIX
   // ========================================================================
 
   const handleUploadAndGrade = async () => {
-  // ✅ FIX: Better error checking
-  if (!file) {
-    setError('Please select a photo first');
-    return;
-  }
-
-  // Check user is logged in
-  if (!user?.id) {
-    setError('You need to be logged in to upload. Please login again.');
-    navigate('/login');
-    return;
-  }
-
-  // Use user.id directly - this is always available when logged in
-  const userId = user.id;
-
-  setLoading(true);
-  setError('');
-  setStep('analyzing');
-
-  try {
-    setUploadProgress(10);
-
-    // Step 1: Sanitize and upload photo to Supabase Storage
-    const sanitizedName = sanitizeFileName(file.name);
-    const timestamp = Date.now();
-    const fileName = `${userId}/${timestamp}-${sanitizedName}`;
-    
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('uniform-photos')
-      .upload(fileName, file);
-
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      throw new Error(`Failed to upload photo: ${uploadError.message}`);
+    // ✅ FIX: Better validation and error messages
+    if (!file) {
+      setError('Please select a photo first');
+      return;
     }
-    setUploadProgress(40);
 
-    // Step 2: Get public URL
-    const { data: urlData } = supabase.storage
-      .from('uniform-photos')
-      .getPublicUrl(fileName);
-
-    const photoUrl = urlData.publicUrl;
-    setUploadProgress(50);
-
-    // Step 3: Analyze uniform
-    const gradingData = await analyzeUniform(preview);
-
-    if (!gradingData) {
-      throw new Error('Failed to analyze uniform');
+    // Check if user is authenticated
+    if (!user?.id) {
+      setError('You need to be logged in to upload photos. Please login again.');
+      navigate('/login');
+      return;
     }
-    setUploadProgress(70);
 
-    // Step 4: Save grade to database
-    const dbResult = await saveGradingResult(userId, gradingData, photoUrl);
+    // Get the user ID
+    const userId = user.id;
+    console.log('Upload starting. User ID:', userId);
+    console.log('User Data:', userData);
 
-    if (!dbResult.success) {
-      throw new Error(dbResult.error || 'Failed to save grade');
+    setLoading(true);
+    setError('');
+    setStep('analyzing');
+
+    try {
+      setUploadProgress(10);
+
+      // Step 1: Sanitize and upload photo to Supabase Storage
+      const sanitizedName = sanitizeFileName(file.name);
+      const timestamp = Date.now();
+      const fileName = `${userId}/${timestamp}-${sanitizedName}`;
+      
+      console.log('Uploading to:', fileName);
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('uniform-photos')
+        .upload(fileName, file);
+
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        throw new Error(`Failed to upload photo: ${uploadError.message}`);
+      }
+
+      console.log('Photo uploaded successfully');
+      setUploadProgress(40);
+
+      // Step 2: Get public URL
+      const { data: urlData } = supabase.storage
+        .from('uniform-photos')
+        .getPublicUrl(fileName);
+
+      const photoUrl = urlData.publicUrl;
+      console.log('Photo URL:', photoUrl);
+      setUploadProgress(50);
+
+      // Step 3: Analyze uniform
+      console.log('Analyzing uniform...');
+      const gradingData = await analyzeUniform(preview);
+
+      if (!gradingData) {
+        throw new Error('Failed to analyze uniform. Please try again.');
+      }
+
+      console.log('Grading data:', gradingData);
+      setUploadProgress(70);
+
+      // Step 4: Save grade to database
+      console.log('Saving to database...');
+      const dbResult = await saveGradingResult(userId, gradingData, photoUrl);
+
+      console.log('Save result:', dbResult);
+
+      if (!dbResult.success) {
+        throw new Error(dbResult.error || 'Failed to save grade to database');
+      }
+
+      setUploadProgress(90);
+
+      // Step 5: Display result
+      setGradingResult({
+        ...gradingData,
+        gradeId: dbResult.gradeId,
+        photoUrl: photoUrl,
+      });
+
+      console.log('Upload and grading complete!');
+      setUploadProgress(100);
+      setStep('result');
+    } catch (err) {
+      console.error('Complete error:', err);
+      setError(err.message || 'Failed to upload and grade photo');
+      setStep('upload');
+    } finally {
+      setLoading(false);
     }
-    setUploadProgress(90);
-
-    // Step 5: Display result
-    setGradingResult({
-      ...gradingData,
-      gradeId: dbResult.gradeId,
-      photoUrl: photoUrl,
-    });
-
-    setUploadProgress(100);
-    setStep('result');
-  } catch (err) {
-    setError(err.message || 'Failed to upload and grade');
-    setStep('upload');
-    console.error('Upload error:', err);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // ========================================================================
   // UTILITY FUNCTIONS
