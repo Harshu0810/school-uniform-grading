@@ -1,17 +1,4 @@
-// frontend/src/services/gradingService.js
-// Combined service for grading logic and database operations
-
 import { supabase } from './authService';
-
-// ============================================================================
-// GRADING LOGIC - IMAGE ANALYSIS
-// ============================================================================
-
-/**
- * Main function to analyze uniform and generate grade
- * @param {string} imageDataUrl - Base64 image data URL from canvas/input
- * @returns {Object} Grading result with scores and feedback
- */
 export const analyzeUniform = (imageDataUrl) => {
   try {
     // Create image element
@@ -112,10 +99,7 @@ function calculateImageStats(data) {
 }
 
 /**
- * Score SHIRT based on:
- * - Color consistency (should be uniform color)
- * - Brightness (not too dark/light)
- * - Coverage (should cover torso area)
+ * Score SHIRT
  */
 function scoreShirt(stats, img) {
   let score = 100;
@@ -149,10 +133,7 @@ function scoreShirt(stats, img) {
 }
 
 /**
- * Score PANTS based on:
- * - Lower half of image should be visible
- * - Color consistency
- * - Darkness (pants are usually dark)
+ * Score PANTS
  */
 function scorePants(stats, img) {
   let score = 100;
@@ -204,10 +185,7 @@ function scorePants(stats, img) {
 }
 
 /**
- * Score SHOES based on:
- * - Bottom of image should have shoe-like features
- * - Should be darker than rest (shoes are usually dark)
- * - Should have some contrast
+ * Score SHOES
  */
 function scoreShoes(stats, img) {
   let score = 100;
@@ -257,10 +235,7 @@ function scoreShoes(stats, img) {
 }
 
 /**
- * Score GROOMING based on:
- * - Head region should be visible
- * - Should have good lighting on face area
- * - Should not have too many shadows
+ * Score GROOMING
  */
 function scoreGrooming(stats, img) {
   let score = 100;
@@ -313,10 +288,7 @@ function scoreGrooming(stats, img) {
 }
 
 /**
- * Score CLEANLINESS based on:
- * - Overall brightness (clean = bright)
- * - Color saturation (clean clothes are more vibrant)
- * - Absence of very dark pixels (dirt/stains)
+ * Score CLEANLINESS
  */
 function scoreCleanliness(stats, img) {
   let score = 100;
@@ -464,8 +436,7 @@ function getDefaultGrade() {
 
 /**
  * Save grading result to Supabase database
- * FIXED: Now properly inserts to both grades and grading_breakdown
- * @param {string} userId - User ID from auth
+ * @param {string} userId - User ID
  * @param {Object} gradingData - Grading result with score, grade, breakdown, feedback
  * @param {string} photoUrl - URL of the uploaded photo
  * @returns {Object} Success status and gradeId
@@ -487,7 +458,6 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
     }
 
     // STEP 1: Get student_id from students table
-    // This is required because grades table has foreign key to students
     console.log('Step 1: Fetching student profile for user:', userId);
     
     const { data: studentData, error: studentError } = await supabase
@@ -519,7 +489,7 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
     
     const gradeRecord = {
       user_id: userId,
-      student_id: studentId,  // ✅ IMPORTANT: Include student_id
+      student_id: studentId,
       photo_url: photoUrl,
       final_score: parseFloat(gradingData.score) || 0,
       final_grade: gradingData.grade || 'F',
@@ -539,7 +509,6 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       console.error('Error code:', gradeError.code);
       console.error('Error message:', gradeError.message);
       
-      // More helpful error messages
       if (gradeError.message.includes('row-level security')) {
         return {
           success: false,
@@ -589,9 +558,6 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
 
     if (breakdownError) {
       console.error('Breakdown insert error:', breakdownError);
-      
-      // If breakdown fails but grade was created, we still succeeded
-      // (trigger will calculate the score anyway)
       console.warn('Breakdown insert failed but grade was created');
       
       return {
@@ -618,74 +584,6 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
   }
 };
 
-// Keep all your other functions:
-// - analyzeUniform
-// - getUserGrades
-// - getGradeById
-// - getGradeStatistics
-// etc.
-
-// Export them as before
-export { analyzeUniform } from './gradingService'; // If in same file, use existing
-
-// ============================================================================
-// ADDITIONAL DEBUG HELPER - Optional
-// Use this to test RLS policies
-// ============================================================================
-
-/**
- * Debug function to check if current user can insert grades
- * Run this in browser console to debug RLS issues
- */
-export const debugRLS = async () => {
-  try {
-    console.log('=== RLS Debug Info ===');
-    
-    // Check current auth
-    const { data: { user } } = await supabase.auth.getUser();
-    console.log('Current user:', user?.id);
-    console.log('Current email:', user?.email);
-
-    // Check if in admin_users
-    const { data: adminData } = await supabase
-      .from('admin_users')
-      .select('*')
-      .eq('user_id', user?.id);
-    
-    console.log('Is admin?', adminData && adminData.length > 0);
-    console.log('Admin data:', adminData);
-
-    // Check student profile
-    const { data: studentData } = await supabase
-      .from('students')
-      .select('*')
-      .eq('user_id', user?.id)
-      .single();
-    
-    console.log('Student profile:', studentData);
-
-    // Try to read own grades
-    const { data: grades, error: gradeError } = await supabase
-      .from('grades')
-      .select('*')
-      .eq('user_id', user?.id);
-    
-    console.log('Own grades readable?', !gradeError);
-    console.log('Grades error:', gradeError?.message);
-    console.log('Grades count:', grades?.length);
-
-    return {
-      userId: user?.id,
-      isAdmin: adminData && adminData.length > 0,
-      hasStudent: !!studentData,
-      canReadGrades: !gradeError,
-    };
-
-  } catch (err) {
-    console.error('Debug error:', err);
-    return { error: err.message };
-  }
-};
 /**
  * Fetch all grades for a specific user
  * @param {string} userId - User ID
