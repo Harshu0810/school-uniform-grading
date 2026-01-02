@@ -443,22 +443,40 @@ function getDefaultGrade() {
  */
 export const saveGradingResult = async (userId, gradingData, photoUrl) => {
   try {
+    console.log('=== SAVING GRADE ===');
+    console.log('userId:', userId);
+    console.log('gradingData:', gradingData);
+    console.log('photoUrl:', photoUrl);
+
+    // Validation
     if (!userId) {
+      console.error('ERROR: userId is missing');
       return {
         success: false,
-        error: 'User ID is required',
+        error: 'User ID is required. Please login again.',
       };
     }
 
     if (!gradingData) {
+      console.error('ERROR: gradingData is missing');
       return {
         success: false,
-        error: 'Grading data is required',
+        error: 'Grading data is required.',
       };
     }
 
+    if (!photoUrl) {
+      console.error('ERROR: photoUrl is missing');
+      return {
+        success: false,
+        error: 'Photo URL is required.',
+      };
+    }
+
+    // ========================================================================
     // STEP 1: Get student_id from students table
-    console.log('Step 1: Fetching student profile for user:', userId);
+    // ========================================================================
+    console.log('Step 1: Fetching student profile...');
     
     const { data: studentData, error: studentError } = await supabase
       .from('students')
@@ -470,25 +488,29 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       console.error('Student fetch error:', studentError);
       return {
         success: false,
-        error: 'Student profile not found. Please complete your profile first.',
+        error: 'Student profile not found. Please complete your profile in onboarding.',
       };
     }
 
     if (!studentData?.id) {
+      console.error('ERROR: Student data has no ID');
       return {
         success: false,
-        error: 'Student ID not found. Please complete your profile first.',
+        error: 'Student profile not found.',
       };
     }
 
     const studentId = studentData.id;
-    console.log('Got student ID:', studentId);
+    console.log('✓ Got student ID:', studentId);
 
+    // ========================================================================
     // STEP 2: Insert into grades table
-    console.log('Step 2: Inserting into grades table');
+    // CRITICAL: Make sure to include user_id!
+    // ========================================================================
+    console.log('Step 2: Inserting grade...');
     
     const gradeRecord = {
-      user_id: userId,
+      user_id: userId,  // ✅ CRITICAL: Must include this!
       student_id: studentId,
       photo_url: photoUrl,
       final_score: parseFloat(gradingData.score) || 0,
@@ -497,7 +519,16 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       graded_at: new Date().toISOString(),
     };
 
-    console.log('Grade record:', gradeRecord);
+    console.log('Grade record to insert:', gradeRecord);
+
+    // ✅ Make sure user_id is NOT null before insert
+    if (!gradeRecord.user_id) {
+      console.error('ERROR: user_id is null in grade record');
+      return {
+        success: false,
+        error: 'User ID missing. Please logout and login again.',
+      };
+    }
 
     const { data: gradeData, error: gradeError } = await supabase
       .from('grades')
@@ -508,11 +539,21 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       console.error('Grade insert error:', gradeError);
       console.error('Error code:', gradeError.code);
       console.error('Error message:', gradeError.message);
+      console.error('Error details:', gradeError.details);
       
-      if (gradeError.message.includes('row-level security')) {
+      // Better error messages
+      if (gradeError.code === '23502') {
+        // NOT NULL constraint violation
         return {
           success: false,
-          error: 'Permission denied: RLS policy blocked insert. Please try again or contact admin.',
+          error: `Database error: Missing required field. Details: ${gradeError.message}`,
+        };
+      }
+      
+      if (gradeError.message?.includes('row-level security')) {
+        return {
+          success: false,
+          error: 'Permission denied: RLS policy blocked insert.',
         };
       }
       
@@ -523,17 +564,20 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
     }
 
     if (!gradeData || gradeData.length === 0) {
+      console.error('ERROR: No data returned from grade insert');
       return {
         success: false,
-        error: 'No data returned from database',
+        error: 'No data returned from database.',
       };
     }
 
     const gradeId = gradeData[0].id;
-    console.log('Grade inserted successfully, ID:', gradeId);
+    console.log('✓ Grade inserted successfully, ID:', gradeId);
 
+    // ========================================================================
     // STEP 3: Insert into grading_breakdown table
-    console.log('Step 3: Inserting into grading_breakdown table');
+    // ========================================================================
+    console.log('Step 3: Inserting grading breakdown...');
     
     const breakdownRecord = {
       grade_id: gradeId,
@@ -549,7 +593,7 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       cleanliness_feedback: gradingData.feedback?.cleanliness || '',
     };
 
-    console.log('Breakdown record:', breakdownRecord);
+    console.log('Breakdown record to insert:', breakdownRecord);
 
     const { data: breakdownData, error: breakdownError } = await supabase
       .from('grading_breakdown')
@@ -563,11 +607,12 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       return {
         success: true,
         gradeId: gradeId,
-        message: 'Grade created, but breakdown details may be incomplete',
+        message: 'Grade created (breakdown incomplete)',
       };
     }
 
-    console.log('Breakdown inserted successfully');
+    console.log('✓ Breakdown inserted successfully');
+    console.log('=== GRADE SAVED SUCCESSFULLY ===');
 
     return {
       success: true,
@@ -577,6 +622,7 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
 
   } catch (err) {
     console.error('Unexpected error in saveGradingResult:', err);
+    console.error('Stack:', err.stack);
     return {
       success: false,
       error: err.message || 'An unexpected error occurred while saving grade',
