@@ -25,9 +25,16 @@ export const AuthProvider = ({ children }) => {
         await new Promise(resolve => setTimeout(resolve, 100));
 
         // Get current session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log('🔵 Calling supabase.auth.getSession()...');
+const { data, error: sessionError } = await supabase.auth.getSession();
+const session = data?.session;
 
-        if (sessionError) throw sessionError;
+console.log('🔵 getSession response:', { session, error: sessionError });
+
+if (sessionError) {
+  console.error('🔵 Session error:', sessionError);
+  throw sessionError;
+}
 
         if (session?.user && isMounted) {
           console.log('🔵 AuthContext: User found:', session.user.id);
