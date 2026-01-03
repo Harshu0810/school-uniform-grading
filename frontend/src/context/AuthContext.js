@@ -1,5 +1,3 @@
-// context/AuthContext.js
-
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../services/authService';
 
@@ -18,22 +16,30 @@ export const AuthProvider = ({ children }) => {
 
     const initAuth = async () => {
       try {
+        console.log('🔵 AuthContext: Initializing...');
+        
+        // Small delay to ensure Supabase is ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         // Get current session
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
 
         if (session?.user && isMounted) {
+          console.log('🔵 AuthContext: User found:', session.user.id);
           setUser(session.user);
           
-          // Get user type and data
           try {
             // Check admin first
-            const { data: adminData } = await supabase
+            const { data: adminData, error: adminError } = await supabase
               .from('admin_users')
               .select('id, email, full_name, role')
               .eq('user_id', session.user.id)
               .single();
 
-            if (adminData && isMounted) {
+            if (!adminError && adminData && isMounted) {
+              console.log('🔵 AuthContext: User is ADMIN');
               setUserType('admin');
               setUserData(adminData);
               setLoading(false);
@@ -41,39 +47,43 @@ export const AuthProvider = ({ children }) => {
             }
 
             // Check student
-            const { data: studentData } = await supabase
+            const { data: studentData, error: studentError } = await supabase
               .from('students')
               .select('id, user_id, full_name, class, section, roll_number')
               .eq('user_id', session.user.id)
               .single();
 
-            if (studentData && isMounted) {
+            if (!studentError && studentData && isMounted) {
+              console.log('🔵 AuthContext: User is STUDENT with profile');
               setUserType('student');
               setUserData(studentData);
-            } else {
-              // Student exists but no profile
+            } else if (isMounted) {
+              console.log('🔵 AuthContext: User is STUDENT without profile (needs onboarding)');
               setUserType('student');
               setUserData(null);
             }
           } catch (dbErr) {
-            console.error('Error fetching user data:', dbErr);
-            // Don't break - set as student by default
+            console.error('🔵 AuthContext: DB error (not critical):', dbErr.message);
+            // Not critical - user exists, just incomplete profile
             setUserType('student');
             setUserData(null);
           }
         } else {
-          // No session
+          console.log('🔵 AuthContext: No session found');
           setUser(null);
           setUserType(null);
           setUserData(null);
         }
-
-        if (isMounted) {
-          setLoading(false);
-        }
       } catch (err) {
-        console.error('Auth init error:', err);
+        console.error('🔵 AuthContext: CRITICAL ERROR:', err);
+        setError(err.message);
+        setUser(null);
+        setUserType(null);
+        setUserData(null);
+      } finally {
+        // ← CRITICAL: ALWAYS set loading to false
         if (isMounted) {
+          console.log('🔵 AuthContext: Finished initializing, setting loading=false');
           setLoading(false);
         }
       }
@@ -86,13 +96,12 @@ export const AuthProvider = ({ children }) => {
       async (event, session) => {
         if (!isMounted) return;
 
-        console.log('Auth event:', event);
+        console.log('🔵 AuthContext: Auth event:', event);
 
         if (event === 'SIGNED_IN' && session?.user) {
           setUser(session.user);
 
           try {
-            // Check admin first
             const { data: adminData } = await supabase
               .from('admin_users')
               .select('id, email, full_name, role')
@@ -105,7 +114,6 @@ export const AuthProvider = ({ children }) => {
               return;
             }
 
-            // Check student
             const { data: studentData } = await supabase
               .from('students')
               .select('id, user_id, full_name, class, section, roll_number')
@@ -120,7 +128,7 @@ export const AuthProvider = ({ children }) => {
               setUserData(null);
             }
           } catch (dbErr) {
-            console.error('Error fetching user data:', dbErr);
+            console.error('DB error:', dbErr);
             setUserType('student');
             setUserData(null);
           }
