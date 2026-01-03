@@ -1,20 +1,27 @@
+// ============================================================================
+// services/gradingService.js - COMPLETE FIXED VERSION
+// Copy-paste this entire file to replace your current one
+// ============================================================================
+
 import { supabase } from './authService';
+
+// ============================================================================
+// GRADING LOGIC - ANALYZE UNIFORM IMAGE
+// ============================================================================
+
+/**
+ * Analyze uniform image and generate grade
+ * Uses canvas-based analysis (no AI APIs required)
+ */
 export const analyzeUniform = (imageDataUrl) => {
   try {
-    // Create image element
     const img = new Image();
     img.src = imageDataUrl;
 
-    // Wait for image to load
     return new Promise((resolve) => {
       img.onload = () => {
-        // Analyze image properties
         const scores = analyzeImageProperties(img);
-        
-        // Generate feedback
         const feedback = generateFeedback(scores);
-        
-        // Calculate final grade
         const { finalScore, finalGrade } = calculateFinalGrade(scores);
 
         resolve({
@@ -26,7 +33,6 @@ export const analyzeUniform = (imageDataUrl) => {
       };
 
       img.onerror = () => {
-        // Fallback if image fails to load
         resolve(getDefaultGrade());
       };
     });
@@ -38,7 +44,6 @@ export const analyzeUniform = (imageDataUrl) => {
 
 /**
  * Analyze image properties using canvas
- * Checks: brightness, contrast, color saturation, uniformity
  */
 function analyzeImageProperties(img) {
   const canvas = document.createElement('canvas');
@@ -51,10 +56,8 @@ function analyzeImageProperties(img) {
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
 
-  // Calculate image statistics
   const stats = calculateImageStats(data);
 
-  // Rule-based scoring for each component
   const scores = {
     shirt: scoreShirt(stats, img),
     pant: scorePants(stats, img),
@@ -98,9 +101,6 @@ function calculateImageStats(data) {
   };
 }
 
-/**
- * Score SHIRT
- */
 function scoreShirt(stats, img) {
   let score = 100;
 
@@ -132,9 +132,6 @@ function scoreShirt(stats, img) {
   return Math.max(0, Math.min(100, score));
 }
 
-/**
- * Score PANTS
- */
 function scorePants(stats, img) {
   let score = 100;
 
@@ -184,9 +181,6 @@ function scorePants(stats, img) {
   return Math.max(0, Math.min(100, score));
 }
 
-/**
- * Score SHOES
- */
 function scoreShoes(stats, img) {
   let score = 100;
 
@@ -234,9 +228,6 @@ function scoreShoes(stats, img) {
   return Math.max(0, Math.min(100, score));
 }
 
-/**
- * Score GROOMING
- */
 function scoreGrooming(stats, img) {
   let score = 100;
 
@@ -287,9 +278,6 @@ function scoreGrooming(stats, img) {
   return Math.max(0, Math.min(100, score));
 }
 
-/**
- * Score CLEANLINESS
- */
 function scoreCleanliness(stats, img) {
   let score = 100;
 
@@ -431,24 +419,27 @@ function getDefaultGrade() {
 }
 
 // ============================================================================
-// DATABASE OPERATIONS
+// DATABASE OPERATIONS - SAVE GRADING RESULT
 // ============================================================================
 
 /**
  * Save grading result to Supabase database
- * @param {string} userId - User ID
- * @param {Object} gradingData - Grading result with score, grade, breakdown, feedback
- * @param {string} photoUrl - URL of the uploaded photo
- * @returns {Object} Success status and gradeId
+ * FIXED: Now properly fetches student_id and passes both user_id and student_id
+ * 
+ * @param {string} userId - Auth user ID
+ * @param {Object} gradingData - Result from analyzeUniform()
+ * @param {File} photoFile - The image file (will be uploaded)
+ * @returns {Promise<Object>} Success status and gradeId
  */
-export const saveGradingResult = async (userId, gradingData, photoUrl) => {
+export const saveGradingResult = async (userId, gradingData, photoFile) => {
   try {
     console.log('=== SAVING GRADE ===');
     console.log('userId:', userId);
     console.log('gradingData:', gradingData);
-    console.log('photoUrl:', photoUrl);
 
-    // Validation
+    // ========================================================================
+    // VALIDATION
+    // ========================================================================
     if (!userId) {
       console.error('ERROR: userId is missing');
       return {
@@ -465,16 +456,16 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       };
     }
 
-    if (!photoUrl) {
-      console.error('ERROR: photoUrl is missing');
+    if (!photoFile) {
+      console.error('ERROR: photoFile is missing');
       return {
         success: false,
-        error: 'Photo URL is required.',
+        error: 'Photo file is required.',
       };
     }
 
     // ========================================================================
-    // STEP 1: Get student_id from students table
+    // STEP 1: FETCH STUDENT_ID (REQUIRED)
     // ========================================================================
     console.log('Step 1: Fetching student profile...');
     
@@ -488,7 +479,7 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       console.error('Student fetch error:', studentError);
       return {
         success: false,
-        error: 'Student profile not found. Please complete your profile in onboarding.',
+        error: 'Student profile not found. Please complete your onboarding first.',
       };
     }
 
@@ -501,17 +492,51 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
     }
 
     const studentId = studentData.id;
-    console.log('✓ Got student ID:', studentId);
+    console.log('✅ Got student ID:', studentId);
 
     // ========================================================================
-    // STEP 2: Insert into grades table
-    // CRITICAL: Make sure to include user_id!
+    // STEP 2: UPLOAD PHOTO TO STORAGE
     // ========================================================================
-    console.log('Step 2: Inserting grade...');
-    
+    console.log('Step 2: Uploading photo to storage...');
+
+    const timestamp = Date.now();
+    const fileExtension = photoFile.name.split('.').pop() || 'jpg';
+    const fileName = `${userId}/${timestamp}.${fileExtension}`;
+
+    console.log('Uploading to:', fileName);
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('uniform-photos')
+      .upload(fileName, photoFile);
+
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError);
+      return {
+        success: false,
+        error: `Failed to upload photo: ${uploadError.message}`,
+      };
+    }
+
+    console.log('✅ Photo uploaded successfully');
+
+    // ========================================================================
+    // STEP 3: GET PUBLIC URL
+    // ========================================================================
+    const { data: urlData } = supabase.storage
+      .from('uniform-photos')
+      .getPublicUrl(fileName);
+
+    const photoUrl = urlData.publicUrl;
+    console.log('✅ Photo URL:', photoUrl);
+
+    // ========================================================================
+    // STEP 4: INSERT GRADE WITH BOTH user_id AND student_id
+    // ========================================================================
+    console.log('Step 3: Inserting grade into database...');
+
     const gradeRecord = {
-      user_id: userId,  // ✅ CRITICAL: Must include this!
-      student_id: studentId,
+      user_id: userId,  // ✅ CRITICAL: Must include
+      student_id: studentId,  // ✅ CRITICAL: Must include
       photo_url: photoUrl,
       final_score: parseFloat(gradingData.score) || 0,
       final_grade: gradingData.grade || 'F',
@@ -519,16 +544,7 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       graded_at: new Date().toISOString(),
     };
 
-    console.log('Grade record to insert:', gradeRecord);
-
-    // ✅ Make sure user_id is NOT null before insert
-    if (!gradeRecord.user_id) {
-      console.error('ERROR: user_id is null in grade record');
-      return {
-        success: false,
-        error: 'User ID missing. Please logout and login again.',
-      };
-    }
+    console.log('Grade record:', gradeRecord);
 
     const { data: gradeData, error: gradeError } = await supabase
       .from('grades')
@@ -541,25 +557,9 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       console.error('Error message:', gradeError.message);
       console.error('Error details:', gradeError.details);
       
-      // Better error messages
-      if (gradeError.code === '23502') {
-        // NOT NULL constraint violation
-        return {
-          success: false,
-          error: `Database error: Missing required field. Details: ${gradeError.message}`,
-        };
-      }
-      
-      if (gradeError.message?.includes('row-level security')) {
-        return {
-          success: false,
-          error: 'Permission denied: RLS policy blocked insert.',
-        };
-      }
-      
       return {
         success: false,
-        error: `Failed to insert grade: ${gradeError.message}`,
+        error: `Failed to save grade: ${gradeError.message}`,
       };
     }
 
@@ -567,18 +567,18 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       console.error('ERROR: No data returned from grade insert');
       return {
         success: false,
-        error: 'No data returned from database.',
+        error: 'Grade was not saved to database.',
       };
     }
 
     const gradeId = gradeData[0].id;
-    console.log('✓ Grade inserted successfully, ID:', gradeId);
+    console.log('✅ Grade inserted successfully, ID:', gradeId);
 
     // ========================================================================
-    // STEP 3: Insert into grading_breakdown table
+    // STEP 5: INSERT GRADING BREAKDOWN
     // ========================================================================
-    console.log('Step 3: Inserting grading breakdown...');
-    
+    console.log('Step 4: Inserting grading breakdown...');
+
     const breakdownRecord = {
       grade_id: gradeId,
       shirt_score: parseFloat(gradingData.breakdown?.shirt) || 0,
@@ -593,7 +593,7 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       cleanliness_feedback: gradingData.feedback?.cleanliness || '',
     };
 
-    console.log('Breakdown record to insert:', breakdownRecord);
+    console.log('Breakdown record:', breakdownRecord);
 
     const { data: breakdownData, error: breakdownError } = await supabase
       .from('grading_breakdown')
@@ -611,7 +611,7 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
       };
     }
 
-    console.log('✓ Breakdown inserted successfully');
+    console.log('✅ Breakdown inserted successfully');
     console.log('=== GRADE SAVED SUCCESSFULLY ===');
 
     return {
@@ -630,18 +630,41 @@ export const saveGradingResult = async (userId, gradingData, photoUrl) => {
   }
 };
 
+// ============================================================================
+// DATABASE OPERATIONS - FETCH GRADES
+// ============================================================================
+
 /**
- * Fetch all grades for a specific user
- * @param {string} userId - User ID
- * @returns {Array} Array of grade records
+ * Fetch all grades for a user
  */
 export const getUserGrades = async (userId) => {
   try {
     const { data, error } = await supabase
       .from('grades')
-      .select('*')
+      .select(
+        `
+        id,
+        final_grade,
+        final_score,
+        graded_at,
+        photo_url,
+        feedback_text,
+        grading_breakdown(
+          shirt_score,
+          pant_score,
+          shoes_score,
+          grooming_score,
+          cleanliness_score,
+          shirt_feedback,
+          pant_feedback,
+          shoes_feedback,
+          grooming_feedback,
+          cleanliness_feedback
+        )
+      `
+      )
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('graded_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching grades:', error);
@@ -656,15 +679,18 @@ export const getUserGrades = async (userId) => {
 };
 
 /**
- * Fetch a single grade by ID
- * @param {string} gradeId - Grade ID
- * @returns {Object} Grade record or null
+ * Get a single grade by ID
  */
 export const getGradeById = async (gradeId) => {
   try {
     const { data, error } = await supabase
       .from('grades')
-      .select('*')
+      .select(
+        `
+        *,
+        grading_breakdown(*)
+      `
+      )
       .eq('id', gradeId)
       .single();
 
@@ -674,42 +700,6 @@ export const getGradeById = async (gradeId) => {
     }
 
     return data;
-  } catch (err) {
-    console.error('Unexpected error:', err);
-    return null;
-  }
-};
-
-/**
- * Get statistics for all users (admin only)
- * @returns {Object} Statistics data
- */
-export const getGradeStatistics = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('grades')
-      .select('final_score, final_grade, user_id, created_at');
-
-    if (error) {
-      console.error('Error fetching statistics:', error);
-      return null;
-    }
-
-    const stats = {
-      totalGrades: data.length,
-      averageScore: data.length > 0 
-        ? Math.round(data.reduce((sum, g) => sum + g.final_score, 0) / data.length)
-        : 0,
-      gradeDistribution: {
-        A: data.filter(g => g.final_grade === 'A').length,
-        B: data.filter(g => g.final_grade === 'B').length,
-        C: data.filter(g => g.final_grade === 'C').length,
-        D: data.filter(g => g.final_grade === 'D').length,
-        F: data.filter(g => g.final_grade === 'F').length,
-      },
-    };
-
-    return stats;
   } catch (err) {
     console.error('Unexpected error:', err);
     return null;
