@@ -10,92 +10,94 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Initialize auth on mount
   useEffect(() => {
     let isMounted = true;
 
     const initAuth = async () => {
-  // ← ADD THIS DEBUG CODE
-  try {
-    console.log('🔵 AuthContext: Initializing...');
-    console.log('🔵 Supabase client:', supabase);
-    console.log('🔵 Auth instance:', supabase.auth);
-        
-        // Small delay to ensure Supabase is ready
+      try {
+        console.log('🔵 AuthContext: Starting initialization');
+        console.log('🔵 Supabase available:', !!supabase);
+        console.log('🔵 Auth available:', !!supabase?.auth);
+
+        // Small delay
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // Get current session
-        console.log('🔵 Calling supabase.auth.getSession()...');
-const { data, error: sessionError } = await supabase.auth.getSession();
-const session = data?.session;
+        // Get session
+        console.log('🔵 Calling getSession...');
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        
+        console.log('🔵 getSession result:', { 
+          hasSession: !!data?.session, 
+          userId: data?.session?.user?.id,
+          sessionError 
+        });
 
-console.log('🔵 getSession response:', { session, error: sessionError });
+        if (sessionError) {
+          throw sessionError;
+        }
 
-if (sessionError) {
-  console.error('🔵 Session error:', sessionError);
-  throw sessionError;
-}
+        if (data?.session?.user && isMounted) {
+          const userId = data.session.user.id;
+          console.log('🔵 User logged in:', userId);
+          setUser(data.session.user);
 
-        if (session?.user && isMounted) {
-          console.log('🔵 AuthContext: User found:', session.user.id);
-          setUser(session.user);
-          
           try {
-  console.log('🔵 Looking up admin for user:', session.user.id);
-  
-  const { data: adminData, error: adminError } = await supabase
-    .from('admin_users')
-    .select('id, email, full_name, role')
-    .eq('user_id', session.user.id)
-    .single();
+            // Check admin
+            console.log('🔵 Checking if admin...');
+            const { data: adminData, error: adminError } = await supabase
+              .from('admin_users')
+              .select('id, email, full_name, role')
+              .eq('user_id', userId)
+              .single();
 
-  console.log('🔵 Admin lookup result:', { adminData, adminError });
+            console.log('🔵 Admin check result:', { found: !!adminData, error: adminError?.message });
+
             if (!adminError && adminData && isMounted) {
-              console.log('🔵 AuthContext: User is ADMIN');
+              console.log('🔵 User is ADMIN');
               setUserType('admin');
               setUserData(adminData);
-              setLoading(false);
               return;
             }
 
             // Check student
+            console.log('🔵 Checking if student...');
             const { data: studentData, error: studentError } = await supabase
               .from('students')
               .select('id, user_id, full_name, class, section, roll_number')
-              .eq('user_id', session.user.id)
+              .eq('user_id', userId)
               .single();
 
+            console.log('🔵 Student check result:', { found: !!studentData, error: studentError?.message });
+
             if (!studentError && studentData && isMounted) {
-              console.log('🔵 AuthContext: User is STUDENT with profile');
+              console.log('🔵 User is STUDENT with profile');
               setUserType('student');
               setUserData(studentData);
             } else if (isMounted) {
-              console.log('🔵 AuthContext: User is STUDENT without profile (needs onboarding)');
+              console.log('🔵 User is STUDENT without profile');
               setUserType('student');
               setUserData(null);
             }
           } catch (dbErr) {
-            console.error('🔵 AuthContext: DB error (not critical):', dbErr.message);
-            // Not critical - user exists, just incomplete profile
+            console.error('🔵 Database lookup error:', dbErr.message);
             setUserType('student');
             setUserData(null);
           }
         } else {
-          console.log('🔵 AuthContext: No session found');
+          console.log('🔵 No user session');
           setUser(null);
           setUserType(null);
           setUserData(null);
         }
       } catch (err) {
-        console.error('🔵 AuthContext: CRITICAL ERROR:', err);
+        console.error('🔵 CRITICAL ERROR:', err.message);
         setError(err.message);
         setUser(null);
         setUserType(null);
         setUserData(null);
       } finally {
-        // ← CRITICAL: ALWAYS set loading to false
         if (isMounted) {
-          console.log('🔵 AuthContext: Finished initializing, setting loading=false');
+          console.log('🔵 Auth complete, setting loading=false');
           setLoading(false);
         }
       }
@@ -103,12 +105,12 @@ if (sessionError) {
 
     initAuth();
 
-    // Listen for auth state changes
+    // Listen for changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
 
-        console.log('🔵 AuthContext: Auth event:', event);
+        console.log('🔵 Auth event:', event);
 
         if (event === 'SIGNED_IN' && session?.user) {
           setUser(session.user);
@@ -145,6 +147,7 @@ if (sessionError) {
             setUserData(null);
           }
         } else if (event === 'SIGNED_OUT') {
+          console.log('🔵 User signed out');
           setUser(null);
           setUserType(null);
           setUserData(null);
