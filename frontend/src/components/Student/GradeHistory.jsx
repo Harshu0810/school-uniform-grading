@@ -15,7 +15,11 @@ export default function GradeHistoryPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-  // ✅ FIX: Only fetch if we have user info
+  // Reset state
+  setGrades([]);
+  setSelectedGrade(null);
+  setError('');
+
   if (!userData?.id) {
     setLoading(false);
     return;
@@ -52,7 +56,7 @@ export default function GradeHistoryPage() {
           )
         `
         )
-        .eq('user_id', userData.user_id)  // ✅ ADD THIS FILTER
+        .eq('user_id', userData.user_id)
         .order('graded_at', { ascending: false });
 
       if (fetchError) throw fetchError;
@@ -74,7 +78,6 @@ export default function GradeHistoryPage() {
 
   fetchGrades();
 
-  // ✅ Cleanup function
   return () => {
     isMounted = false;
   };
