@@ -41,13 +41,15 @@ if (sessionError) {
           setUser(session.user);
           
           try {
-            // Check admin first
-            const { data: adminData, error: adminError } = await supabase
-              .from('admin_users')
-              .select('id, email, full_name, role')
-              .eq('user_id', session.user.id)
-              .single();
+  console.log('🔵 Looking up admin for user:', session.user.id);
+  
+  const { data: adminData, error: adminError } = await supabase
+    .from('admin_users')
+    .select('id, email, full_name, role')
+    .eq('user_id', session.user.id)
+    .single();
 
+  console.log('🔵 Admin lookup result:', { adminData, adminError });
             if (!adminError && adminData && isMounted) {
               console.log('🔵 AuthContext: User is ADMIN');
               setUserType('admin');
