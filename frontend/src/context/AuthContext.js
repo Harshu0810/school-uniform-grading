@@ -12,34 +12,21 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let isMounted = true;
+    let authInitialized = false;
 
-    const initAuth = async () => {
-      try {
-        console.log('🔵 AuthContext: Starting initialization');
-        console.log('🔵 Supabase available:', !!supabase);
-        console.log('🔵 Auth available:', !!supabase?.auth);
+    // ========================================================================
+    // FIXED: Use onAuthStateChange instead of getSession to avoid race condition
+    // ========================================================================
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!isMounted) return;
 
-        // Small delay
-        await new Promise(resolve => setTimeout(resolve, 100));
+        console.log('🔵 Auth event:', event);
 
-        // Get session
-        console.log('🔵 Calling getSession...');
-        const { data, error: sessionError } = await supabase.auth.getSession();
-        
-        console.log('🔵 getSession result:', { 
-          hasSession: !!data?.session, 
-          userId: data?.session?.user?.id,
-          sessionError 
-        });
-
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        if (data?.session?.user && isMounted) {
-          const userId = data.session.user.id;
-          console.log('🔵 User logged in:', userId);
-          setUser(data.session.user);
+        if (event === 'SIGNED_IN' && session?.user) {
+          console.log('🔵 User signed in:', session.user.id);
+          setUser(session.user);
+          authInitialized = true;
 
           try {
             // Check admin
@@ -47,7 +34,7 @@ export const AuthProvider = ({ children }) => {
             const { data: adminData, error: adminError } = await supabase
               .from('admin_users')
               .select('id, email, full_name, role')
-              .eq('user_id', userId)
+              .eq('user_id', session.user.id)
               .single();
 
             console.log('🔵 Admin check result:', { found: !!adminData, error: adminError?.message });
@@ -56,6 +43,7 @@ export const AuthProvider = ({ children }) => {
               console.log('🔵 User is ADMIN');
               setUserType('admin');
               setUserData(adminData);
+              setLoading(false);
               return;
             }
 
@@ -64,7 +52,7 @@ export const AuthProvider = ({ children }) => {
             const { data: studentData, error: studentError } = await supabase
               .from('students')
               .select('id, user_id, full_name, class, section, roll_number')
-              .eq('user_id', userId)
+              .eq('user_id', session.user.id)
               .single();
 
             console.log('🔵 Student check result:', { found: !!studentData, error: studentError?.message });
@@ -78,85 +66,49 @@ export const AuthProvider = ({ children }) => {
               setUserType('student');
               setUserData(null);
             }
+            
+            if (isMounted) {
+              setLoading(false);
+            }
           } catch (dbErr) {
             console.error('🔵 Database lookup error:', dbErr.message);
             setUserType('student');
             setUserData(null);
-          }
-        } else {
-          console.log('🔵 No user session');
-          setUser(null);
-          setUserType(null);
-          setUserData(null);
-        }
-      } catch (err) {
-        console.error('🔵 CRITICAL ERROR:', err.message);
-        setError(err.message);
-        setUser(null);
-        setUserType(null);
-        setUserData(null);
-      } finally {
-        if (isMounted) {
-          console.log('🔵 Auth complete, setting loading=false');
-          setLoading(false);
-        }
-      }
-    };
-
-    initAuth();
-
-    // Listen for changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!isMounted) return;
-
-        console.log('🔵 Auth event:', event);
-
-        if (event === 'SIGNED_IN' && session?.user) {
-          setUser(session.user);
-
-          try {
-            const { data: adminData } = await supabase
-              .from('admin_users')
-              .select('id, email, full_name, role')
-              .eq('user_id', session.user.id)
-              .single();
-
-            if (adminData) {
-              setUserType('admin');
-              setUserData(adminData);
-              return;
+            if (isMounted) {
+              setLoading(false);
             }
-
-            const { data: studentData } = await supabase
-              .from('students')
-              .select('id, user_id, full_name, class, section, roll_number')
-              .eq('user_id', session.user.id)
-              .single();
-
-            if (studentData) {
-              setUserType('student');
-              setUserData(studentData);
-            } else {
-              setUserType('student');
-              setUserData(null);
-            }
-          } catch (dbErr) {
-            console.error('DB error:', dbErr);
-            setUserType('student');
-            setUserData(null);
           }
         } else if (event === 'SIGNED_OUT') {
           console.log('🔵 User signed out');
           setUser(null);
           setUserType(null);
           setUserData(null);
+          setLoading(false);
+          authInitialized = true;
+        } else if (event === 'INITIAL_SESSION') {
+          // This event fires when checking initial session on mount
+          console.log('🔵 Checking initial session');
+          if (!session?.user) {
+            console.log('🔵 No initial session found');
+            setLoading(false);
+            authInitialized = true;
+          }
         }
       }
     );
 
+    // Timeout: if auth doesn't complete after 5 seconds, stop loading anyway
+    const timeout = setTimeout(() => {
+      if (!authInitialized && isMounted) {
+        console.warn('🔵 Auth timeout - stopping loading spinner');
+        setLoading(false);
+        authInitialized = true;
+      }
+    }, 5000);
+
     return () => {
       isMounted = false;
+      clearTimeout(timeout);
       subscription?.unsubscribe();
     };
   }, []);
