@@ -15,8 +15,11 @@ export const AuthProvider = ({ children }) => {
     let isMounted = true;
 
     const initAuth = async () => {
-      try {
-        console.log('🔵 AuthContext: Initializing...');
+  // ← ADD THIS DEBUG CODE
+  try {
+    console.log('🔵 AuthContext: Initializing...');
+    console.log('🔵 Supabase client:', supabase);
+    console.log('🔵 Auth instance:', supabase.auth);
         
         // Small delay to ensure Supabase is ready
         await new Promise(resolve => setTimeout(resolve, 100));
