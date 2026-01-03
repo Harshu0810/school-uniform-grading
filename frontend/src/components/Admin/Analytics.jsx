@@ -1,8 +1,3 @@
-
-// components/Admin/Analytics.jsx
-// Complete analytics dashboard with charts and statistics
-// Ready for: frontend/src/components/Admin/Analytics.jsx
-
 import React, { useState, useEffect } from 'react';
 import {
   BarChart,
@@ -58,7 +53,7 @@ export default function Analytics() {
 
   // Data states
   const [overallStats, setOverallStats] = useState(null);
-  const [gradeDistribution, setGradeDistribution] = useState(null);
+  const [gradeDistribution, setGradeDistribution] = useState([]);
   const [dailyStats, setDailyStats] = useState([]);
   const [weeklyStats, setWeeklyStats] = useState([]);
   const [classWiseDistribution, setClassWiseDistribution] = useState([]);
@@ -71,58 +66,115 @@ export default function Analytics() {
 
   // Load all data
   useEffect(() => {
+    let isMounted = true;
+
+    const fetchAllData = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        // Small delay to ensure auth is ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const [stats, distrib, daily, weekly, classwise, top, needsHelp] = await Promise.all([
+          getOverallStats(),
+          getGradeDistribution(),
+          getDailyStats(selectedDays),
+          getWeeklyStats(selectedWeeks),
+          getClassWiseDistribution(),
+          getTopStudents(10),
+          getStudentsNeedingHelp(10),
+        ]);
+
+        if (isMounted) {
+          if (stats.success) setOverallStats(stats.stats);
+          
+          if (distrib.success) {
+            // ✅ FIX: Ensure data is array and has proper structure
+            const chartData = Array.isArray(distrib.chartData) ? distrib.chartData : [];
+            setGradeDistribution(chartData);
+          }
+          
+          if (daily.success) {
+            const chartData = Array.isArray(daily.chartData) ? daily.chartData : [];
+            setDailyStats(chartData);
+          }
+          
+          if (weekly.success) {
+            const chartData = Array.isArray(weekly.chartData) ? weekly.chartData : [];
+            setWeeklyStats(chartData);
+          }
+          
+          if (classwise.success) {
+            const chartData = Array.isArray(classwise.chartData) ? classwise.chartData : [];
+            setClassWiseDistribution(chartData);
+          }
+          
+          if (top.success) {
+            const students = Array.isArray(top.students) ? top.students : [];
+            setTopStudents(students);
+          }
+          
+          if (needsHelp.success) {
+            const students = Array.isArray(needsHelp.students) ? needsHelp.students : [];
+            setNeedsHelpStudents(students);
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError('Failed to load analytics data');
+          console.error('Analytics error:', err);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
     fetchAllData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Reload when filter changes
   useEffect(() => {
+    let isMounted = true;
+
+    const fetchDailyStats = async () => {
+      const result = await getDailyStats(selectedDays);
+      if (isMounted && result.success) {
+        const chartData = Array.isArray(result.chartData) ? result.chartData : [];
+        setDailyStats(chartData);
+      }
+    };
+
     fetchDailyStats();
+
+    return () => {
+      isMounted = false;
+    };
   }, [selectedDays]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const fetchWeeklyStats = async () => {
+      const result = await getWeeklyStats(selectedWeeks);
+      if (isMounted && result.success) {
+        const chartData = Array.isArray(result.chartData) ? result.chartData : [];
+        setWeeklyStats(chartData);
+      }
+    };
+
     fetchWeeklyStats();
+
+    return () => {
+      isMounted = false;
+    };
   }, [selectedWeeks]);
-
-  const fetchAllData = async () => {
-    setLoading(true);
-    setError('');
-
-    try {
-      // Fetch all data in parallel
-      const [stats, distrib, daily, weekly, classwise, top, needsHelp] = await Promise.all([
-        getOverallStats(),
-        getGradeDistribution(),
-        getDailyStats(selectedDays),
-        getWeeklyStats(selectedWeeks),
-        getClassWiseDistribution(),
-        getTopStudents(10),
-        getStudentsNeedingHelp(10),
-      ]);
-
-      if (stats.success) setOverallStats(stats.stats);
-      if (distrib.success) setGradeDistribution(distrib.chartData);
-      if (daily.success) setDailyStats(daily.chartData);
-      if (weekly.success) setWeeklyStats(weekly.chartData);
-      if (classwise.success) setClassWiseDistribution(classwise.chartData);
-      if (top.success) setTopStudents(top.students);
-      if (needsHelp.success) setNeedsHelpStudents(needsHelp.students);
-    } catch (err) {
-      setError('Failed to load analytics data');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchDailyStats = async () => {
-    const result = await getDailyStats(selectedDays);
-    if (result.success) setDailyStats(result.chartData);
-  };
-
-  const fetchWeeklyStats = async () => {
-    const result = await getWeeklyStats(selectedWeeks);
-    if (result.success) setWeeklyStats(result.chartData);
-  };
 
   if (loading) {
     return <LoadingSpinner />;
@@ -261,7 +313,10 @@ export default function Analytics() {
 
           {dailyStats && dailyStats.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={dailyStats}>
+              <LineChart
+                data={dailyStats}
+                margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
                 <YAxis />
@@ -272,14 +327,12 @@ export default function Analytics() {
                   dataKey="count"
                   stroke="#3b82f6"
                   name="Grades Count"
-                  yAxisId="left"
                 />
                 <Line
                   type="monotone"
                   dataKey="avgScore"
                   stroke="#10b981"
                   name="Avg Score"
-                  yAxisId="right"
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -305,7 +358,10 @@ export default function Analytics() {
 
           {weeklyStats && weeklyStats.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={weeklyStats}>
+              <BarChart
+                data={weeklyStats}
+                margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="week" />
                 <YAxis />
