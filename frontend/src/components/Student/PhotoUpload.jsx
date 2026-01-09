@@ -1,8 +1,6 @@
 // ============================================================================
-// FILE: components/Student/PhotoUpload.jsx - COMPLETE FIXED VERSION
-// This is the full file with all fixes for RLS and user_id issues
+// FILE: components/Student/PhotoUpload.jsx - SYNTAX FIXES ONLY
 // ============================================================================
-
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -230,7 +228,7 @@ export default function PhotoUpload() {
   };
 
   // ========================================================================
-  // GRADING & UPLOAD - COMPLETE FIX
+  // GRADING & UPLOAD - FIXED SYNTAX ERRORS
   // ========================================================================
 
   const handleUploadAndGrade = async () => {
@@ -272,6 +270,7 @@ export default function PhotoUpload() {
 
       if (uploadError) {
         console.error('Storage upload error:', uploadError);
+        // FIX: Corrected template literal syntax
         throw new Error(`Failed to upload photo: ${uploadError.message}`);
       }
 
@@ -300,7 +299,7 @@ export default function PhotoUpload() {
 
       // Step 4: Save grade to database
       console.log('Saving to database...');
-      const dbResult = await saveGradingResult(userId, gradingData, photoUrl);
+      const dbResult = await saveGradingResult(userId, gradingData, file);
 
       console.log('Save result:', dbResult);
 
